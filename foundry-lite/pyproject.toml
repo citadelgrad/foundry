@@ -1,0 +1,15 @@
+[project]
+name = "foundry"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml>=6.0",
+  "croniter>=2.0",
+]
+
+[project.scripts]
+foundry = "foundry.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

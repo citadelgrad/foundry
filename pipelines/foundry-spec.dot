@@ -1,0 +1,814 @@
+digraph foundry_pipeline {
+    label="Foundry MVP Build Pipeline"
+    goal="Build the Foundry local quality gate runner (Phase 1 MVP) implementing foundry doctor, foundry run, foundry latest, and foundry schedule commands with structured agent-readable output"
+    model="sonnet"
+
+    start [
+        label="Start"
+        shape="Mdiamond"
+        timeout="120s"
+        prompt="Pipeline start. Foundry MVP Phase 1 build begins."
+    ]
+
+    scaffold [
+        label="Scaffold Project"
+        shape="box"
+        timeout="300s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Create the Foundry project scaffold at ./foundry-lite/ using uv (the only allowed package manager -- no pip ever).
+
+Run:
+  mkdir -p foundry-lite
+  cd foundry-lite
+  uv init --name foundry --package
+  mkdir -p src/foundry
+
+Create these files (empty stubs):
+  src/foundry/__init__.py
+  src/foundry/__main__.py
+  src/foundry/cli.py
+  src/foundry/config.py
+  src/foundry/runner.py
+  src/foundry/scheduler.py
+  src/foundry/output.py
+  src/foundry/doctor.py
+
+Add dependencies:
+  uv add pyyaml click croniter
+
+Ensure pyproject.toml has:
+  [project.scripts]
+  foundry = 'foundry.__main__:main'
+
+Verify with: cd foundry-lite && uv sync"
+    ]
+
+    verify_scaffold [
+        label="Verify Scaffold?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="120s"
+        allowed_tools="Bash,Read"
+        prompt="Verify the foundry-lite project scaffold. Check:
+1. foundry-lite/pyproject.toml exists with [project.scripts] entry: foundry = 'foundry.__main__:main'
+2. All stubs exist: src/foundry/__init__.py, __main__.py, cli.py, config.py, runner.py, scheduler.py, output.py, doctor.py
+3. pyyaml, click, croniter are in pyproject.toml dependencies
+4. cd foundry-lite && uv sync runs without error
+Output PASS if all pass, FAIL with details otherwise."
+    ]
+
+    fixup_scaffold [
+        label="Fix Scaffold"
+        shape="box"
+        timeout="300s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix scaffold issues. Ensure foundry-lite/pyproject.toml has correct [project.scripts] with foundry = 'foundry.__main__:main', all src/foundry/*.py stubs exist, and pyyaml/click/croniter are installed via uv add (never pip). Re-run uv sync to confirm."
+    ]
+
+    implement_config [
+        label="Implement config.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Implement foundry-lite/src/foundry/config.py. This loads and validates foundry.yaml.
+
+foundry.yaml schema:
+  version: 1
+  profiles:
+    quick:
+      gates:
+        - id: lint
+          run: make lint
+          timeout: 5m
+        - id: test
+          run: make test
+    gha:
+      gates:
+        - id: ci
+          act:
+            workflow: .github/workflows/ci.yml
+            event: pull_request
+          timeout: 20m
+    full:
+      gates:
+        - id: mutation
+          run: make mutation
+          allow_failure: true
+          decision_on_failure: warn
+          timeout: 30m
+  schedules:
+    nightly:
+      profile: full
+      cron: '0 2 * * *'
+
+Gate fields:
+  id (str, required): unique within profile
+  run (str, optional*): shell command
+  act (dict, optional*): {workflow: str, event: str default 'push'}
+  timeout (str, optional, default '10m'): '30s', '5m', '1h'
+  allow_failure (bool, default False)
+  decision_on_failure (str, default 'fail'): 'warn' only valid with allow_failure=true
+  *exactly one of run or act must be present
+
+Runner type detection from run string:
+  starts with 'make '     -> runner='make'
+  starts with 'just '     -> runner='just'
+  starts with 'task '     -> runner='task'
+  starts with 'mise run ' -> runner='mise'
+  anything else           -> runner='shell'
+  act block present       -> runner='act'
+
+Implement these functions:
+1. load_config(path: Path) -> dict  -- reads YAML, raises on parse error with line info
+2. validate_config(cfg: dict) -> list[str]  -- returns error strings:
+   - version must be 1
+   - each gate must have exactly one of run or act
+   - decision_on_failure='warn' requires allow_failure=true
+3. parse_timeout(s: str) -> int  -- '5m'->300, '30s'->30, '1h'->3600
+4. detect_runner(gate: dict) -> str  -- returns runner type string
+5. find_config(start: Path) -> Path | None  -- search cwd upward for foundry.yaml
+
+At bottom add: if __name__ == '__main__': self-test that validates a sample config dict and asserts parse_timeout('5m')==300."
+    ]
+
+    verify_config [
+        label="Verify config.py?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Bash,Read"
+        prompt="Verify foundry-lite/src/foundry/config.py:
+1. cd foundry-lite && uv run python -m foundry.config  -- self-test must exit 0
+2. uv run python -c 'from foundry.config import load_config, validate_config, parse_timeout, detect_runner, find_config; print(parse_timeout(\"5m\"), parse_timeout(\"30s\"), parse_timeout(\"1h\"))' -- must print '300 30 3600'
+3. Verify validate_config catches: version!=1, gate with both run and act, gate with neither, warn without allow_failure
+Output PASS if all pass, FAIL with details."
+    ]
+
+    fixup_config [
+        label="Fix config.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix config.py issues. Must: import cleanly, export load_config/validate_config/parse_timeout/detect_runner/find_config, parse_timeout('5m')==300/'30s'==30/'1h'==3600, validate_config catch version!=1 and gate with both/neither run+act and warn-without-allow_failure, self-test pass with exit 0."
+    ]
+
+    implement_doctor [
+        label="Implement doctor.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Implement foundry-lite/src/foundry/doctor.py. Runs environment pre-flight checks.
+
+Checks and failure modes:
+  git repo detected          -> FAIL if not in git repo
+  foundry.yaml present       -> FAIL if missing
+  foundry.yaml parseable     -> FAIL if invalid YAML
+  Docker running             -> FAIL only if Act gates configured
+  act binary on PATH         -> FAIL only if Act gates configured
+  Makefile/justfile present  -> WARN only if shell/make gates configured
+  .github/workflows present  -> WARN only if Act gates configured
+
+Output format:
+  [PASS] git: repo detected at /repos/myapp
+  [WARN] .github/workflows: no workflows found (Act gates will fail)
+  [FAIL] docker: daemon not running
+
+Exit 0 if only PASS/WARN. Exit 1 if any FAIL.
+
+Implement:
+  from dataclasses import dataclass
+
+  @dataclass
+  class DoctorCheck:
+      name: str
+      status: str  # 'PASS', 'WARN', 'FAIL'
+      message: str
+
+  def check_git() -> DoctorCheck
+  def check_foundry_yaml(path: Path) -> DoctorCheck
+  def check_docker(required: bool) -> DoctorCheck
+  def check_act(required: bool) -> DoctorCheck
+  def check_runners(cfg: dict) -> DoctorCheck
+  def check_workflows(required: bool) -> DoctorCheck
+  def run_checks(config_path: Path, cfg: dict | None = None) -> list[DoctorCheck]
+  def print_doctor_results(checks: list[DoctorCheck]) -> int  # returns exit code
+
+Use subprocess.run(['git', 'rev-parse', '--git-dir'], capture_output=True) for git check.
+Use shutil.which() for binary detection (never hardcode paths).
+Use subprocess.run(['docker', 'info'], capture_output=True, timeout=5) for Docker.
+Never raise -- all checks return DoctorCheck, catch exceptions and return FAIL status."
+    ]
+
+    verify_doctor [
+        label="Verify doctor.py?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Bash,Read"
+        prompt="Verify foundry-lite/src/foundry/doctor.py:
+1. cd foundry-lite && uv run python -c 'from foundry.doctor import DoctorCheck, run_checks, print_doctor_results, check_git; r=check_git(); print(r.status, r.name)' -- must print status and name without crashing
+2. Verify DoctorCheck dataclass has name/status/message fields
+3. Verify shutil.which is used (grep the file)
+4. Verify no bare 'raise' statements -- all exceptions must be caught and returned as FAIL DoctorCheck
+5. Verify run_checks, print_doctor_results, check_git, check_docker, check_act, check_runners functions all exist
+Output PASS if all pass, FAIL with details."
+    ]
+
+    fixup_doctor [
+        label="Fix doctor.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix doctor.py issues. Must: import cleanly, DoctorCheck dataclass with name/status/message, all check_* functions return DoctorCheck (never raise), use shutil.which for binary detection, run_checks and print_doctor_results exist, print_doctor_results returns 0 if no FAIL else 1."
+    ]
+
+    implement_runner [
+        label="Implement runner.py"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Implement foundry-lite/src/foundry/runner.py. This is the gate execution engine.
+
+Key behaviors:
+  - Sequential execution only (v1, no parallel)
+  - Fail-fast: stop on first required gate failure (allow_failure=False)
+  - Gates after failure point get status='skipped'
+  - Timeout via subprocess timeout= param; on timeout set status='timed_out'
+  - Log capture: merge stdout+stderr to .foundry/runs/<run-id>/logs/<gate-id>.log
+  - Log size cap: 524288 bytes (512KB); if exceeded set log_truncated=True, truncate file
+  - needs_human sentinel: if output contains literal 'FOUNDRY_NEEDS_HUMAN' set status='needs_human'
+  - Tee output: stream to stderr AND write to log file during interactive runs
+
+Run ID format: datetime.utcnow().strftime('%Y-%m-%dT%H-%M-%SZ')
+
+Gate invocation by runner type:
+  'make'  -> ['make', target]           -- target = word after 'make '
+  'just'  -> ['just', recipe]
+  'task'  -> ['task', task_name]
+  'mise'  -> ['mise', 'run', task_name]
+  'shell' -> ['sh', '-c', command]
+  'act'   -> ['act', event, '-W', workflow_path]
+
+Gate status values: 'passed', 'failed', 'timed_out', 'skipped', 'needs_human'
+
+Decision derivation (evaluate in this exact order):
+  1. Any gate status='needs_human'                                          -> decision='needs_human'
+  2. Any required gate (allow_failure=False) status='failed' or 'timed_out' -> decision='fail'
+  3. Any allow_failure=True gate with decision_on_failure='warn' failed     -> decision='warn'
+  4. All required gates passed                                              -> decision='pass'
+
+Exit code: 0 for pass/warn, 1 for fail/needs_human
+
+Dataclasses:
+  @dataclass
+  class GateResult:
+      id: str
+      runner: str
+      command: str
+      status: str
+      exit_code: int | None
+      started_at: datetime
+      finished_at: datetime
+      duration_ms: int
+      log_path: Path
+      log_truncated: bool
+      allow_failure: bool
+
+  @dataclass
+  class RunResult:
+      run_id: str
+      profile: str
+      decision: str
+      exit_code: int
+      started_at: datetime
+      finished_at: datetime
+      repo_path: Path
+      commit: str
+      branch: str
+      dirty: bool
+      gates: list[GateResult]
+
+Main function:
+  def execute_profile(profile_name: str, gates: list[dict], run_dir: Path, repo_path: Path, dry_run: bool = False) -> RunResult
+
+For repo info use:
+  git rev-parse HEAD  -> commit
+  git rev-parse --abbrev-ref HEAD  -> branch
+  git status --porcelain  -> dirty if non-empty
+
+Progress to stderr (not stdout -- stdout is reserved for --json):
+  [foundry] profile: quick
+  [foundry] gate lint -> running (make lint)
+  [foundry] gate lint -> passed (42s)
+  [foundry] decision: pass
+  [foundry] evidence: .foundry/runs/2026-06-15T12-00-00Z/"
+    ]
+
+    verify_runner [
+        label="Verify runner.py?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Bash,Read"
+        prompt="Verify foundry-lite/src/foundry/runner.py:
+1. cd foundry-lite && uv run python -c 'from foundry.runner import GateResult, RunResult, execute_profile; print(\"import ok\")' -- must print 'import ok'
+2. Verify GateResult and RunResult dataclasses exist with expected fields
+3. Grep for 'needs_human' sentinel detection (literal string FOUNDRY_NEEDS_HUMAN)
+4. Grep for 524288 (log size cap constant)
+5. Verify decision derivation has the 4-step order: needs_human check first, then fail, then warn, then pass
+6. Verify 'skipped' status is set for gates after fail-fast stop
+Output PASS if all pass, FAIL with details."
+    ]
+
+    fixup_runner [
+        label="Fix runner.py"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix runner.py issues. Must: import cleanly, GateResult and RunResult dataclasses with all fields, execute_profile function, 4-step decision derivation in exact order (needs_human->fail->warn->pass), FOUNDRY_NEEDS_HUMAN sentinel detection in gate output, 524288 byte log cap with log_truncated flag, fail-fast with remaining gates set to 'skipped', progress output to stderr not stdout."
+    ]
+
+    implement_output [
+        label="Implement output.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Implement foundry-lite/src/foundry/output.py. Writes result.json, summary.md, metadata.json.
+
+result.json schema (schema_version must be 1):
+{
+  'schema_version': 1,
+  'run_id': '2026-06-15T12-00-00Z',
+  'profile': 'quick',
+  'decision': 'pass',
+  'exit_code': 0,
+  'started_at': '2026-06-15T12:00:00Z',
+  'finished_at': '2026-06-15T12:03:14Z',
+  'repo': {
+    'path': '/repos/myapp',
+    'commit': 'abc123def456',
+    'branch': 'main',
+    'dirty': false
+  },
+  'gates': [
+    {
+      'id': 'lint',
+      'runner': 'make',
+      'command': 'make lint',
+      'status': 'passed',
+      'exit_code': 0,
+      'started_at': '2026-06-15T12:00:00Z',
+      'finished_at': '2026-06-15T12:00:42Z',
+      'duration_ms': 42000,
+      'log': 'logs/lint.log',
+      'log_truncated': false,
+      'allow_failure': false
+    }
+  ],
+  'agent_recommendation': {
+    'safe_to_continue': true,
+    'safe_to_commit': true,
+    'needs_human': false,
+    'summary': 'All quick gates passed.'
+  }
+}
+
+agent_recommendation derivation:
+  safe_to_continue: decision in ('pass', 'warn')
+  safe_to_commit: decision == 'pass'
+  needs_human: decision == 'needs_human'
+  summary: human-readable based on decision
+
+summary.md template:
+  # Foundry Run: <profile>
+  **Decision:** <decision>
+  **Profile:** <profile>
+  **Commit:** <sha> (<branch>)
+  **Duration:** <Xm Ys>
+  **Run ID:** <run_id>
+  ## Gates
+  | Gate | Status | Duration |
+  |------|--------|----------|
+  | lint | passed | 42s |
+  ## Agent Recommendation
+  Safe to continue: **yes/no**
+  Safe to commit: **yes/no**
+  Needs human: yes/no
+  > <summary>
+
+metadata.json:
+  {'foundry_version': '0.1.0', 'python_version': X.Y.Z, 'platform': 'darwin', 'log_size_cap_bytes': 524288}
+
+Run directory layout:
+  .foundry/runs/<run-id>/result.json
+  .foundry/runs/<run-id>/summary.md
+  .foundry/runs/<run-id>/metadata.json
+  .foundry/runs/<run-id>/logs/<gate-id>.log
+  .foundry/latest -> runs/<run-id>  (symlink, updated after each run)
+
+Also write .foundry/.gitignore on first run:
+  # Foundry run artifacts
+  runs/
+
+Implement:
+  def write_run_output(run_result: RunResult, run_dir: Path) -> None
+  def write_result_json(run_result: RunResult, run_dir: Path) -> None
+  def write_summary_md(run_result: RunResult, run_dir: Path) -> None
+  def write_metadata_json(run_dir: Path) -> None
+  def update_latest_symlink(foundry_dir: Path, run_id: str) -> None
+  def format_duration(ms: int) -> str  # 42000->'42s', 135000->'2m 15s', 3723000->'1h 2m 3s'
+
+Note: datetime objects must be serialized via .isoformat() for JSON output."
+    ]
+
+    verify_output [
+        label="Verify output.py?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Bash,Read"
+        prompt="Verify foundry-lite/src/foundry/output.py:
+1. cd foundry-lite && uv run python -c 'from foundry.output import write_run_output, format_duration, update_latest_symlink; print(format_duration(42000), format_duration(135000))' -- must print '42s 2m 15s' (or equivalent)
+2. Verify all functions exist: write_run_output, write_result_json, write_summary_md, write_metadata_json, update_latest_symlink, format_duration
+3. Grep for schema_version: must be hardcoded as 1
+4. Verify safe_to_continue logic: True for pass/warn, False for fail/needs_human
+5. Verify safe_to_commit logic: True only for pass
+6. Verify .isoformat() is used for datetime serialization (not str())
+Output PASS if all pass, FAIL with details."
+    ]
+
+    fixup_output [
+        label="Fix output.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix output.py issues. Must: import cleanly, all 6 functions exist, schema_version=1 hardcoded, format_duration works (42000->'42s', 135000->'2m 15s'), safe_to_continue=True for pass/warn, safe_to_commit=True only for pass, needs_human=True only for needs_human decision, datetime serialized with .isoformat(), symlink updated after each run."
+    ]
+
+    implement_scheduler [
+        label="Implement scheduler.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Implement foundry-lite/src/foundry/scheduler.py. Installs/removes/lists scheduled runs.
+
+Platform detection: sys.platform == 'darwin' for macOS, else Linux.
+
+macOS (launchd):
+Write ~/Library/LaunchAgents/com.foundry.<name>.plist:
+  <?xml version='1.0' encoding='UTF-8'?>
+  <!DOCTYPE plist PUBLIC '-//Apple//DTD PLIST 1.0//EN' 'http://www.apple.com/DTDs/PropertyList-1.0.dtd'>
+  <plist version='1.0'>
+  <dict>
+    <key>Label</key><string>com.foundry.<name></string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/path/to/foundry</string>
+      <string>run</string>
+      <string><profile></string>
+      <string>--repo</string>
+      <string>/path/to/repo</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key><integer>H</integer>
+      <key>Minute</key><integer>M</integer>
+    </dict>
+    <key>StandardOutPath</key><string>/tmp/foundry-<name>.log</string>
+    <key>StandardErrorPath</key><string>/tmp/foundry-<name>.log</string>
+  </dict>
+  </plist>
+Then: launchctl load ~/Library/LaunchAgents/com.foundry.<name>.plist
+
+Cron to launchd: parse '0 2 * * *' to extract minute=0, hour=2 for StartCalendarInterval.
+Use croniter for validation only: croniter.is_valid(cron_expr).
+
+Linux (cron):
+(crontab -l 2>/dev/null; echo '<cron_expr> /path/to/foundry run <profile> --repo <repo> >> /tmp/foundry-<name>.log 2>&1') | crontab -
+
+Foundry binary: shutil.which('foundry') or sys.argv[0] or sys.executable + ' -m foundry'
+
+Functions:
+  def install(name: str, profile: str, cron_expr: str, repo_path: Path, foundry_binary: str) -> None
+  def list_schedules() -> list[dict]  # [{name, profile, cron, repo}]
+  def remove(name: str) -> None
+
+list_schedules output format:
+  macOS: scan ~/Library/LaunchAgents/com.foundry.*.plist files
+  Linux: parse crontab -l for lines containing 'foundry run'
+
+remove():
+  macOS: launchctl unload plist, then os.unlink the plist file
+  Linux: (crontab -l | grep -v 'foundry-<name>') | crontab -"
+    ]
+
+    verify_scheduler [
+        label="Verify scheduler.py?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Bash,Read"
+        prompt="Verify foundry-lite/src/foundry/scheduler.py:
+1. cd foundry-lite && uv run python -c 'from foundry.scheduler import install, list_schedules, remove; print(\"import ok\")' -- must print 'import ok'
+2. Verify install, list_schedules, remove functions exist
+3. Grep for sys.platform check (darwin vs linux branching)
+4. Grep for croniter.is_valid usage
+5. Grep for plist XML generation (StartCalendarInterval key)
+6. Verify shutil.which is used for foundry binary detection
+Output PASS if all pass, FAIL with details."
+    ]
+
+    fixup_scheduler [
+        label="Fix scheduler.py"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix scheduler.py issues. Must: import cleanly (including croniter), have install/list_schedules/remove functions, use sys.platform for darwin/linux branching, generate launchd plist XML with StartCalendarInterval for macOS, generate crontab entry for Linux, use croniter.is_valid for cron expression validation, use shutil.which for foundry binary detection."
+    ]
+
+    implement_cli [
+        label="Implement CLI"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Implement foundry-lite/src/foundry/cli.py and src/foundry/__main__.py. Wire all modules into the CLI using click.
+
+__main__.py:
+  from foundry.cli import cli
+  def main():
+      cli()
+  if __name__ == '__main__':
+      main()
+
+cli.py structure (use click):
+  @click.group()
+  def cli(): pass
+
+## foundry doctor
+  @cli.command()
+  def doctor():
+    from foundry.config import find_config, load_config
+    from foundry.doctor import run_checks, print_doctor_results
+    config_path = find_config(Path.cwd())
+    cfg = load_config(config_path) if config_path else None
+    checks = run_checks(config_path or Path('foundry.yaml'), cfg)
+    sys.exit(print_doctor_results(checks))
+
+## foundry run <profile>
+  @cli.command()
+  @click.argument('profile')
+  @click.option('--json', 'output_json', is_flag=True)
+  @click.option('--dry-run', is_flag=True)
+  @click.option('--repo', type=click.Path(), default=None)
+  def run(profile, output_json, dry_run, repo):
+    1. If --repo: os.chdir(repo)
+    2. Find foundry.yaml via find_config(Path.cwd())
+       If not found: print to stderr 'foundry.yaml not found. Run foundry doctor.' then sys.exit(1)
+    3. Load and validate config. If errors: print errors, sys.exit(1)
+    4. If profile not in cfg['profiles']: print available profiles, sys.exit(1)
+    5. Create run_dir: Path('.foundry') / 'runs' / run_id; mkdir parents
+    6. execute_profile() from runner.py
+    7. write_run_output() from output.py
+    8. update_latest_symlink() from output.py
+    9. If output_json: print(result_json_path.read_text()) to stdout
+    10. sys.exit(run_result.exit_code)
+
+IMPORTANT: Progress goes to stderr. Stdout is CLEAN unless --json.
+
+## foundry latest
+  @cli.command()
+  @click.option('--summary', is_flag=True)
+  @click.option('--json', 'output_json', is_flag=True)
+  def latest(summary, output_json):
+    latest_dir = Path('.foundry') / 'latest'
+    If not exists: print 'No runs found' and exit 1
+    If --summary: print (latest_dir / 'summary.md').read_text()
+    Elif --json: print (latest_dir / 'result.json').read_text()
+    Else: parse result.json and print one-line: '<run_id>  <profile>  <decision>  <duration>'
+
+## foundry schedule (subgroup)
+  @cli.group()
+  def schedule(): pass
+
+  @schedule.command('install')
+  @click.argument('name')
+  def schedule_install(name):
+    Load foundry.yaml. Find schedules.<name>. Call scheduler.install().
+
+  @schedule.command('list')
+  def schedule_list():
+    Call scheduler.list_schedules(). Print table.
+
+  @schedule.command('remove')
+  @click.argument('name')
+  def schedule_remove(name):
+    Call scheduler.remove(name). Print confirmation."
+    ]
+
+    verify_cli [
+        label="Verify CLI?"
+        shape="diamond"
+        node_type="conditional"
+        goal_gate="true"
+        timeout="600s"
+        allowed_tools="Bash,Read,Write"
+        prompt="Verify the CLI implementation. Run from foundry-lite/:
+
+1. uv run foundry --help  -- must list: doctor, run, latest, schedule
+2. uv run foundry doctor --help  -- must show usage
+3. uv run foundry run --help  -- must show PROFILE arg and --json/--dry-run/--repo flags
+4. uv run foundry latest --help  -- must show --summary/--json flags
+5. uv run foundry schedule --help  -- must list: install, list, remove
+6. uv run python -c 'from foundry.cli import cli; print(\"import ok\")'
+
+7. Create /tmp/test-foundry-cli/ with foundry.yaml:
+   version: 1
+   profiles:
+     quick:
+       gates:
+         - id: echo-test
+           run: echo hello
+   Run: mkdir -p /tmp/test-foundry-cli && cat that yaml > /tmp/test-foundry-cli/foundry.yaml
+   Then: cd /tmp/test-foundry-cli && git init && git config user.email t@t.com && git config user.name T && git add . && git commit -m init
+   Then: cd /tmp/test-foundry-cli && uv --directory <abs-path-to-foundry-lite> run foundry run quick --dry-run
+   Must print gate info to stderr and exit 0 without actually running gates.
+
+Output PASS if all 7 checks pass, FAIL with step number and error details."
+    ]
+
+    fixup_cli [
+        label="Fix CLI"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix CLI issues based on verification failures. Common issues:
+- Missing click decorators or wrong argument names
+- stdout vs stderr mixing (progress MUST go to stderr, stdout clean for --json)
+- Import errors between modules
+- --dry-run not implemented (should print gates list and exit without running)
+- schedule subgroup not properly registered
+- foundry.yaml not-found error message must say 'foundry.yaml not found. Run foundry doctor.'
+- latest command failing when .foundry/latest symlink missing
+
+Fix whatever specific steps failed in the verification."
+    ]
+
+    integration_test [
+        label="Integration Test"
+        shape="box"
+        timeout="600s"
+        allowed_tools="Bash,Read,Write"
+        prompt="Run a full end-to-end integration test. Find the absolute path to foundry-lite first.
+
+FOUNDRY_LITE=$(pwd)/foundry-lite   # or absolute path if already there
+
+Step 1: Create test repo
+  mkdir -p /tmp/foundry-int-test
+  cd /tmp/foundry-int-test
+  git init
+  git config user.email test@test.com
+  git config user.name Test
+
+Step 2: Create foundry.yaml
+  version: 1
+  profiles:
+    quick:
+      gates:
+        - id: echo-pass
+          run: echo 'Gate passed'
+        - id: warn-gate
+          run: echo 'warn gate'
+          allow_failure: true
+          decision_on_failure: warn
+    failing:
+      gates:
+        - id: will-fail
+          run: sh -c 'exit 1'
+    sentinel:
+      gates:
+        - id: needs-human-gate
+          run: sh -c 'echo FOUNDRY_NEEDS_HUMAN; exit 0'
+
+Step 3: Commit
+  git add . && git commit -m 'init'
+
+Step 4: Run quick profile
+  cd /tmp/foundry-int-test && uv --directory $FOUNDRY_LITE run foundry run quick --json
+  MUST: exit 0, create .foundry/runs/<run-id>/result.json, result.json parseable by python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d[\"decision\"]==\"pass\"; print(\"ok\")' .foundry/latest/result.json
+
+Step 5: Run foundry latest
+  cd /tmp/foundry-int-test && uv --directory $FOUNDRY_LITE run foundry latest
+  MUST: print one-line status containing 'pass'
+
+Step 6: Run failing profile
+  cd /tmp/foundry-int-test && uv --directory $FOUNDRY_LITE run foundry run failing --json; echo exit:$?
+  MUST: exit 1, result.json has decision=fail
+
+Step 7: Run sentinel profile
+  cd /tmp/foundry-int-test && uv --directory $FOUNDRY_LITE run foundry run sentinel --json; echo exit:$?
+  MUST: exit 1, result.json has decision=needs_human
+
+Step 8: Run doctor
+  cd /tmp/foundry-int-test && uv --directory $FOUNDRY_LITE run foundry doctor
+  MUST: not crash, print check results
+
+Report step-by-step results. Note which passed and which failed with exact error output."
+    ]
+
+    verify_integration [
+        label="Verify Integration?"
+        shape="diamond"
+        node_type="conditional"
+        timeout="120s"
+        allowed_tools="Bash,Read"
+        prompt="Review the integration test output. Did all 8 steps pass?
+- Step 4: foundry run quick --json exited 0, result.json valid, decision=pass
+- Step 5: foundry latest printed one-line with 'pass'
+- Step 6: foundry run failing exited 1, decision=fail in result.json
+- Step 7: foundry run sentinel exited 1, decision=needs_human in result.json
+- Step 8: foundry doctor ran without crashing
+Output PASS if all passed, FAIL with which step(s) failed and exact error."
+    ]
+
+    fixup_integration [
+        label="Fix Integration Issues"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Bash,Write,Read"
+        prompt="Fix the integration test failures. Read failure details carefully and fix root cause in the right module.
+
+Common failure causes by symptom:
+- 'No such file or directory' for .foundry/runs: runner.py must create run_dir and logs/ subdir before writing
+- JSON serialization error: datetime objects need .isoformat() not str()
+- 'latest' symlink broken: output.py update_latest_symlink must use os.symlink with absolute target
+- Wrong exit code: runner.py exit_code must be 0 for pass/warn, 1 for fail/needs_human; cli.py must call sys.exit(run_result.exit_code)
+- sentinel not detected: runner.py must check output buffer for literal string 'FOUNDRY_NEEDS_HUMAN'
+- doctor crashes: all check_* functions must catch all exceptions and return DoctorCheck(status='FAIL')
+- Gate log path in result.json must be relative: 'logs/lint.log' not absolute path
+
+After fixing, note which files were changed."
+    ]
+
+    commit_changes [
+        label="Commit Changes"
+        shape="box"
+        timeout="120s"
+        allowed_tools="Bash(git:*)"
+        prompt="Stage and commit all changes made by this pipeline.
+1. Run git diff --stat to review what changed
+2. Stage the changed files: git add -A
+3. Commit with a descriptive message:
+   git commit -m 'feat: implement Foundry MVP Phase 1 -- doctor, run, latest, schedule commands with result.json output contract'"
+    ]
+
+    done [
+        label="Done"
+        shape="Msquare"
+        timeout="120s"
+        prompt="Pipeline complete. Foundry MVP Phase 1 implemented with foundry doctor, foundry run, foundry latest, foundry schedule install/list/remove, and structured result.json output."
+    ]
+
+    start -> scaffold
+    scaffold -> verify_scaffold
+
+    verify_scaffold -> implement_config [label="PASS" condition="preferred_label=PASS"]
+    verify_scaffold -> fixup_scaffold [label="FAIL"]
+    fixup_scaffold -> verify_scaffold [loop_restart="true"]
+
+    implement_config -> verify_config
+    verify_config -> implement_doctor [label="PASS" condition="preferred_label=PASS"]
+    verify_config -> fixup_config [label="FAIL"]
+    fixup_config -> verify_config [loop_restart="true"]
+
+    implement_doctor -> verify_doctor
+    verify_doctor -> implement_runner [label="PASS" condition="preferred_label=PASS"]
+    verify_doctor -> fixup_doctor [label="FAIL"]
+    fixup_doctor -> verify_doctor [loop_restart="true"]
+
+    implement_runner -> verify_runner
+    verify_runner -> implement_output [label="PASS" condition="preferred_label=PASS"]
+    verify_runner -> fixup_runner [label="FAIL"]
+    fixup_runner -> verify_runner [loop_restart="true"]
+
+    implement_output -> verify_output
+    verify_output -> implement_scheduler [label="PASS" condition="preferred_label=PASS"]
+    verify_output -> fixup_output [label="FAIL"]
+    fixup_output -> verify_output [loop_restart="true"]
+
+    implement_scheduler -> verify_scheduler
+    verify_scheduler -> implement_cli [label="PASS" condition="preferred_label=PASS"]
+    verify_scheduler -> fixup_scheduler [label="FAIL"]
+    fixup_scheduler -> verify_scheduler [loop_restart="true"]
+
+    implement_cli -> verify_cli
+    verify_cli -> integration_test [label="PASS" condition="preferred_label=PASS"]
+    verify_cli -> fixup_cli [label="FAIL"]
+    fixup_cli -> verify_cli [loop_restart="true"]
+
+    integration_test -> verify_integration
+    verify_integration -> commit_changes [label="PASS" condition="preferred_label=PASS"]
+    verify_integration -> fixup_integration [label="FAIL"]
+    fixup_integration -> verify_integration [loop_restart="true"]
+
+    commit_changes -> done
+}

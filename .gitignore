@@ -4,3 +4,13 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+CLAUDE.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+
+# Pipeline artifacts
+.pas/
