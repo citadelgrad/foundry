@@ -244,11 +244,47 @@ def run_profile(
     result_dict = write_result_json(run_result_obj, run_dir)
     write_summary_md(run_result_obj, run_dir)
     write_evidence(run_dir, result_dict)
-    maybe_create_beads_issue(integrations_cfg or {}, result_dict, run_dir)
+    _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path)
     return result_dict
 
 
-def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path) -> None:
+def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo_path: Path) -> None:
+    decision = result["decision"]
+    is_failure = decision in ("fail", "needs_human")
+    if not is_failure:
+        return
+
+    explanation: str | None = None
+
+    explain_cfg = integrations_cfg.get("explain", {})
+    if explain_cfg and explain_cfg.get("on_failure"):
+        import os
+        from foundry.explain import explain_run, required_env_key
+        model = explain_cfg.get("model", "gemini-3.5-flash")
+        if os.environ.get(required_env_key(model)):
+            try:
+                explanation = explain_run(run_dir, model)
+                (run_dir / "explanation.md").write_text(explanation)
+                print(explanation, file=sys.stderr)
+            except Exception as e:
+                print(f"[foundry] explain failed: {e}", file=sys.stderr)
+        else:
+            print(f"[foundry] explain skipped: {required_env_key(model)} not set", file=sys.stderr)
+
+    maybe_create_beads_issue(integrations_cfg, result, run_dir, explanation)
+
+    agent_cfg = integrations_cfg.get("agent", {})
+    if agent_cfg and agent_cfg.get("on_failure"):
+        cmd_template = agent_cfg.get("command", "claude --print 'Foundry run failed. See {run_dir}/result.json'")
+        cmd = cmd_template.format(run_dir=run_dir)
+        try:
+            subprocess.Popen(["sh", "-c", cmd], cwd=str(repo_path), start_new_session=True)
+            print(f"[foundry] agent spawned: {cmd}", file=sys.stderr)
+        except Exception as e:
+            print(f"[foundry] agent spawn failed: {e}", file=sys.stderr)
+
+
+def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path, explanation: str | None = None) -> None:
     beads_cfg = integrations_cfg.get("beads", {})
     if not beads_cfg:
         return
@@ -261,16 +297,19 @@ def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path
         return
 
     try:
-        summary = (run_dir / "summary.md").read_text()[:4096]
+        summary = (run_dir / "summary.md").read_text()[:2048]
     except FileNotFoundError:
         summary = f"foundry run {result['run_id']} {decision}"
+
+    description = f"{summary}\n\n## AI Explanation\n\n{explanation}" if explanation else summary
+    description = description[:4096]
 
     commit = result["repo"]["commit"]
     title = f"foundry: {result['profile']} {decision} @ {commit[:7]}"
 
     try:
         proc = subprocess.run(
-            ["bd", "create", "--title", title, "--description", summary, "--type", "bug", "--priority", "2"],
+            ["bd", "create", "--title", title, "--description", description, "--type", "bug", "--priority", "2"],
             capture_output=True, text=True,
         )
     except FileNotFoundError:
