@@ -1,0 +1,69 @@
+foundry-lite/src/foundry/cli.py
+  s_d82d101904f8b0::t_93a12b7c14b577 104
+  s_d82d101904f8b0::t_91404912fcbf34 156
+  s_d82d101904f8b0::t_5d6877b62ae8d9 167-169
+  s_f3d15d67320de3::t_35402196cb0498 175-179
+  s_3370ada4938eae::t_567e3a0dfa7bfb 263
+  s_3370ada4938eae::t_be9098f3e3e461 264
+  s_d82d101904f8b0::t_71c32546a26864 31,36-40,44-45
+  s_d82d101904f8b0::t_db2bfa4ae8d1c0 124-130,136-137
+  s_3370ada4938eae::t_ce901fc6285484 134-135,138
+  s_d82d101904f8b0::t_a2978d994f0111 204,206-222,225-242,249-262,265-288,290-309,311-318,321-323
+  s_60ce5c37e49754::t_bfc582e458b0bb 121-123,133
+  s_f3d15d67320de3::t_67c305b753e877 346,354-355
+  s_f3d15d67320de3::t_1b4f7beca94377 326-339
+foundry-lite/src/foundry/explain.py
+  s_3370ada4938eae::t_40ad1556c56980 16-17
+  s_3370ada4938eae::t_10fb0fe724f4b7 43
+  s_3370ada4938eae::t_1a66934dd749b3 64
+  s_60ce5c37e49754::t_b408821ed5f1d7 2,23-42,59,61
+  s_3370ada4938eae::t_a2ffec9d267e61 44
+foundry-lite/src/foundry/runner.py
+  s_f3d15d67320de3::t_880857f8c80a71 263
+  s_f3d15d67320de3::t_04f904ddc422cb 251-262,264-287,300,304-306,312
+  s_f3d15d67320de3::t_6653a23e7b1f80 247
+foundry-lite/pyproject.toml
+  s_60ce5c37e49754::t_64705bfddb4ca0 9
+foundry-lite/src/foundry/daemon.py
+  s_f3d15d67320de3::t_c64cd41d8e28af 1-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "4753b99d8c37fc1eb3666c3526898ffb5d629ad4",
+  "prompts": {},
+  "sessions": {
+    "s_3370ada4938eae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3cf24edd-88de-4599-ba72-a16ca643c7f5",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_60ce5c37e49754": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4512d241-7067-4f01-900d-3690e32a068f",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_d82d101904f8b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58cce4a1-f1d7-4166-ac74-6492775f3d8f",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_f3d15d67320de3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35cbb6fb-d22c-46f4-84e6-d45409aced08",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
