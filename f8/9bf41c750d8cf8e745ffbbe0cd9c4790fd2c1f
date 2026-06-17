@@ -1,0 +1,27 @@
+foundry-lite/src/foundry/doctor.py
+  s_6851873fcfd8de::t_b1ba66441f830e 50-52
+  s_6851873fcfd8de::t_4371660e4fcfd8 80,82
+foundry-lite/src/foundry/cli.py
+  s_6851873fcfd8de::t_f48ef422321681 60,62
+  s_6851873fcfd8de::t_40fe5ccf7a5da2 138-140
+  s_6851873fcfd8de::t_92ced55705ccdb 30-33
+foundry-lite/src/foundry/scheduler.py
+  s_6851873fcfd8de::t_ab9710168ba805 9-10
+  s_6851873fcfd8de::t_1cc86f641df492 21-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "f89bf41c750d8cf8e745ffbbe0cd9c4790fd2c1f",
+  "prompts": {},
+  "sessions": {
+    "s_6851873fcfd8de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e19570c-a00c-47de-9085-191919cd6aab",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
