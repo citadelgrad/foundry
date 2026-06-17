@@ -1,0 +1,108 @@
+foundry-lite/src/foundry/config.py
+  s_01757c2609e4cf::t_c6a61a5b1e23a5 37
+  s_1f2d88fcabc3e8::t_6b59e8f737466a 107-108
+  s_01757c2609e4cf::t_d542ffbe018087 90
+  s_1f2d88fcabc3e8::t_ea7c198721d59a 17-22,28
+  s_1f2d88fcabc3e8::t_95346e8e89128b 75-80,85
+pipelines/foundry-phase2.dot
+  s_fc54623ffe5c1d::t_477adcee608bb7 1-240
+foundry-lite/src/foundry/runner.py
+  s_1f2d88fcabc3e8::t_b7a63278054b75 61-64
+  s_01757c2609e4cf::t_fda67c5f58da10 183-190,192-194
+  s_01757c2609e4cf::t_25bc40462856e5 4
+  s_1f2d88fcabc3e8::t_5f05918dd01982 85-87
+foundry-lite/src/foundry/doctor.py
+  s_e5a2d513fbd539::t_03a9dc8f44bb5f 56-65
+foundry-phase3-spec.md
+  s_fc54623ffe5c1d::t_a1e18fba5ae6a2 1-362
+foundry-lite/src/foundry/explain.py
+  s_7ce06e02899048::t_598058c8ce6f5f 1-56
+foundry-lite/pyproject.toml
+  s_b09e893d229cee::t_99096647ff40ca 8-9
+foundry-lite/src/foundry/dagger_runner.py
+  s_1f2d88fcabc3e8::t_9000d6ab2f3346 1-85
+foundry-lite/INTEGRATION.md
+  s_5900b403ef961c::t_d930fc729f3b26 1-52
+foundry-lite/src/foundry/watcher.py
+  s_7e81c8c1775f75::t_78f080fc6d99c5 1-61
+foundry-phase2-spec.md
+  s_fc54623ffe5c1d::t_61592b8fc5d90a 1-322
+foundry-lite/src/foundry/cli.py
+  s_e5a2d513fbd539::t_97e8cd8a72e4a0 118-131
+  s_e5a2d513fbd539::t_5f6f3c7d827692 169-175
+  s_e5a2d513fbd539::t_f75e741932b7d6 47-51,59-63
+  s_e5a2d513fbd539::t_12e8e2ef409ed8 3
+  s_e5a2d513fbd539::t_692e2bc16514c8 195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "98bf96a16e8c00a6e39f0347189281b0180ffa5d",
+  "prompts": {},
+  "sessions": {
+    "s_01757c2609e4cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "93125ea3-554d-4365-a32d-4974af408d2c",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_1f2d88fcabc3e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "72eb9458-3f85-4732-9eb1-e8c48d952f62",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_5900b403ef961c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "309ad0cc-083d-4c5f-b3ef-87e38b063a12",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_7ce06e02899048": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "72069524-5e12-4b29-8f9b-f641520be542",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_7e81c8c1775f75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80cdde37-a37b-4e9b-a665-2405746f0493",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_b09e893d229cee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "958301c3-4cc2-42e6-af57-fd717169be6c",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_e5a2d513fbd539": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "562468b5-438c-4ae0-bcee-90db5def7df1",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_fc54623ffe5c1d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2ac030d4-01a4-4da5-89e2-30587e4800db",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
