@@ -48,6 +48,7 @@ class FoundryConfig:
     version: int
     profiles: dict[str, ProfileConfig]
     schedules: dict[str, ScheduleConfig] = field(default_factory=dict)
+    integrations: dict = field(default_factory=dict)
 
 
 def load_config(path: str = "foundry.yaml") -> FoundryConfig:
@@ -93,7 +94,8 @@ def _build(cfg: dict) -> FoundryConfig:
     for name, sdata in cfg.get("schedules", {}).items():
         schedules[name] = ScheduleConfig(profile=sdata["profile"], cron=sdata["cron"])
 
-    return FoundryConfig(version=cfg["version"], profiles=profiles, schedules=schedules)
+    return FoundryConfig(version=cfg["version"], profiles=profiles, schedules=schedules,
+                         integrations=cfg.get("integrations", {}))
 
 
 def validate_config(cfg: dict) -> list[str]:

@@ -11,10 +11,8 @@ from foundry.output import (
     update_latest_symlink,
     write_gitignore_if_missing,
     write_metadata_json,
-    write_result_json,
-    write_summary_md,
 )
-from foundry.runner import RunResult, derive_decision, get_git_info, run_profile
+from foundry.runner import get_git_info, run_profile
 from foundry.scheduler import install_schedule, list_schedules, remove_schedule
 
 
@@ -68,22 +66,20 @@ def cmd_run(args):
     run_dir.mkdir(parents=True, exist_ok=True)
     write_gitignore_if_missing(foundry_dir)
 
-    print(f"[foundry] profile: {profile_name}", file=sys.stderr)
+    from foundry.global_config import load_global_config
+    gcfg = load_global_config()
+    repo_alias = next((r["alias"] for r in gcfg.get("repos", []) if r.get("path") == str(repo)), None)
+    alias_label = f" (repo: {repo_alias})" if repo_alias else ""
+    print(f"[foundry] profile: {profile_name}{alias_label}", file=sys.stderr)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    gate_results = run_profile(profile, profile_name, run_dir, repo)
-    finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
     git = get_git_info(str(repo))
-    decision = derive_decision(gate_results)
-    exit_code = 0 if decision in ("pass", "warn") else 1
-    run_result = RunResult(
-        run_id=run_id, profile=profile_name, decision=decision, exit_code=exit_code,
-        started_at=started_at, finished_at=finished_at, repo_path=str(repo),
-        commit=git["commit"], branch=git["branch"], dirty=git["dirty"],
-        gates=gate_results,
+    result = run_profile(
+        profile, profile_name, run_dir, repo,
+        integrations_cfg=cfg.integrations,
+        run_id=run_id,
+        git_info=git,
+        started_at=started_at,
     )
-    result = write_result_json(run_result, run_dir)
-    write_summary_md(run_result, run_dir)
     write_metadata_json(run_dir)
     update_latest_symlink(run_dir)
 
@@ -109,6 +105,8 @@ def cmd_latest(args):
         print((run_dir / "result.json").read_text())
     elif args.summary:
         print((run_dir / "summary.md").read_text())
+    elif args.evidence:
+        print((run_dir / "evidence.json").read_text())
     else:
         result = json.loads((run_dir / "result.json").read_text())
         total_s = sum(g.get("duration_ms", 0) for g in result.get("gates", [])) // 1000
@@ -127,6 +125,36 @@ def cmd_explain(args):
     from foundry.explain import explain_run
     print(explain_run(run_dir, args.model))
     sys.exit(0)
+
+
+def cmd_init(args):
+    from foundry.init_cmd import run_init
+    run_init(_repo(args))
+
+
+def cmd_repos(args):
+    from foundry.global_config import add_repo, list_repos, load_global_config, save_global_config
+    if args.repos_cmd == "add":
+        add_repo(_repo(args), getattr(args, "alias", None))
+        print(f"[foundry] added repo: {_repo(args)}", file=sys.stderr)
+    elif args.repos_cmd == "list":
+        rows = list_repos()
+        if not rows:
+            print("No repos registered. Use: foundry repos add")
+            return
+        for r in rows:
+            last = f"{r['last_run']}  {r['last_decision']}" if r["last_run"] else "(no runs)  -"
+            print(f"{r['alias']:<20}  {r['path']:<50}  {last}")
+    elif args.repos_cmd == "remove":
+        target = args.alias_or_path
+        cfg = load_global_config()
+        before = len(cfg.get("repos", []))
+        cfg["repos"] = [r for r in cfg.get("repos", []) if r.get("alias") != target and r.get("path") != target]
+        if len(cfg["repos"]) == before:
+            print(f"error: no repo matching '{target}'", file=sys.stderr)
+            sys.exit(1)
+        save_global_config(cfg)
+        print(f"[foundry] removed repo: {target}", file=sys.stderr)
 
 
 def cmd_schedule(args):
@@ -159,6 +187,7 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("doctor", help="Check environment")
+    sub.add_parser("init", help="Generate foundry.yaml from detected gates")
 
     run_p = sub.add_parser("run", help="Run a profile")
     run_p.add_argument("profile", nargs="?", default=None, help="Profile name from foundry.yaml")
@@ -177,6 +206,7 @@ def main():
     latest_p = sub.add_parser("latest", help="Show latest run result")
     latest_p.add_argument("--json", action="store_true")
     latest_p.add_argument("--summary", action="store_true")
+    latest_p.add_argument("--evidence", action="store_true")
 
     sched_p = sub.add_parser("schedule", help="Manage schedules")
     sched_sub = sched_p.add_subparsers(dest="schedule_cmd")
@@ -186,16 +216,27 @@ def main():
     remove_p.add_argument("name")
     sched_sub.add_parser("list")
 
+    repos_p = sub.add_parser("repos", help="Manage tracked repos")
+    repos_sub = repos_p.add_subparsers(dest="repos_cmd")
+    repos_add_p = repos_sub.add_parser("add", help="Track current repo")
+    repos_add_p.add_argument("--alias", default=None, metavar="NAME", help="Short name for this repo")
+    repos_sub.add_parser("list", help="List tracked repos")
+    repos_remove_p = repos_sub.add_parser("remove", help="Remove a tracked repo")
+    repos_remove_p.add_argument("alias_or_path", help="Alias or path to remove")
+
     args = parser.parse_args()
 
     if args.command is None:
         parser.print_help()
         sys.exit(0)
 
-    dispatch = {"doctor": cmd_doctor, "run": cmd_run, "latest": cmd_latest, "explain": cmd_explain, "schedule": cmd_schedule}
+    dispatch = {"doctor": cmd_doctor, "init": cmd_init, "run": cmd_run, "latest": cmd_latest, "explain": cmd_explain, "schedule": cmd_schedule, "repos": cmd_repos}
     if args.command in dispatch:
         if args.command == "schedule" and args.schedule_cmd is None:
             sched_p.print_help()
+            sys.exit(0)
+        if args.command == "repos" and args.repos_cmd is None:
+            repos_p.print_help()
             sys.exit(0)
         dispatch[args.command](args)
     else:

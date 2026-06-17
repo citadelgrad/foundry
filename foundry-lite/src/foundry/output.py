@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import platform
@@ -47,6 +48,22 @@ def write_result_json(run_result: RunResult, run_dir: Path) -> dict:
     }
     (run_dir / "result.json").write_text(json.dumps(result, indent=2))
     return result
+
+
+def write_evidence(run_dir: Path, result: dict) -> None:
+    result_bytes = json.dumps(result, sort_keys=True).encode()
+    result_hash = "sha256:" + hashlib.sha256(result_bytes).hexdigest()
+    evidence = {
+        "schema_version": 1,
+        "run_id": result["run_id"],
+        "decision": result["decision"],
+        "profile": result["profile"],
+        "repo_commit": result["repo"]["commit"],
+        "result_hash": result_hash,
+        "foundry_version": result.get("foundry_version", "unknown"),
+        "issued_at": result["finished_at"],
+    }
+    (run_dir / "evidence.json").write_text(json.dumps(evidence, indent=2))
 
 
 def derive_summary_text(run_result: RunResult) -> str:

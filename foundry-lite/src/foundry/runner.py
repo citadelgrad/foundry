@@ -188,29 +188,99 @@ def run_profile_parallel(profile: ProfileConfig, run_dir: Path, repo_path: Path)
         return [f.result() for f in futures]
 
 
-def run_profile(profile: ProfileConfig, profile_name: str, run_dir: Path, repo_path: Path) -> list[GateResult]:
+def run_profile(
+    profile: ProfileConfig,
+    profile_name: str,
+    run_dir: Path,
+    repo_path: Path,
+    *,
+    integrations_cfg: dict | None = None,
+    run_id: str | None = None,
+    git_info: dict | None = None,
+    started_at: str | None = None,
+) -> dict:
     if profile.parallel:
-        return run_profile_parallel(profile, run_dir, repo_path)
+        gate_results = run_profile_parallel(profile, run_dir, repo_path)
+    else:
+        log_dir = run_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        gates = profile.gates
+        gate_results = []
 
-    log_dir = run_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    gates = profile.gates
-    results = []
+        for i, gate in enumerate(gates):
+            result = run_gate(gate, log_dir, repo_path)
+            gate_results.append(result)
+            # ponytail: fail-fast on required gate failure
+            if result.status in ("failed", "timed_out") and not result.allow_failure:
+                now = datetime.now(timezone.utc).isoformat()
+                for skipped in gates[i + 1:]:
+                    runner_type, cmd = _detect_runner(skipped)
+                    gate_results.append(GateResult(
+                        id=skipped.id, runner=runner_type, command=cmd, status="skipped",
+                        exit_code=None, started_at=now, finished_at=now, duration_ms=0,
+                        log="", log_truncated=False, allow_failure=skipped.allow_failure,
+                        decision_on_failure=skipped.decision_on_failure,
+                    ))
+                break
 
-    for i, gate in enumerate(gates):
-        result = run_gate(gate, log_dir, repo_path)
-        results.append(result)
-        # ponytail: fail-fast on required gate failure
-        if result.status in ("failed", "timed_out") and not result.allow_failure:
-            now = datetime.now(timezone.utc).isoformat()
-            for skipped in gates[i + 1:]:
-                runner_type, cmd = _detect_runner(skipped)
-                results.append(GateResult(
-                    id=skipped.id, runner=runner_type, command=cmd, status="skipped",
-                    exit_code=None, started_at=now, finished_at=now, duration_ms=0,
-                    log="", log_truncated=False, allow_failure=skipped.allow_failure,
-                    decision_on_failure=skipped.decision_on_failure,
-                ))
-            break
+    finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    decision = derive_decision(gate_results)
+    exit_code = 0 if decision in ("pass", "warn") else 1
+    gi = git_info or {}
+    run_result_obj = RunResult(
+        run_id=run_id or "unknown",
+        profile=profile_name,
+        decision=decision,
+        exit_code=exit_code,
+        started_at=started_at or finished_at,
+        finished_at=finished_at,
+        repo_path=str(repo_path),
+        commit=gi.get("commit", "unknown"),
+        branch=gi.get("branch", "unknown"),
+        dirty=gi.get("dirty", False),
+        gates=gate_results,
+    )
+    from foundry.output import write_evidence, write_result_json, write_summary_md
+    result_dict = write_result_json(run_result_obj, run_dir)
+    write_summary_md(run_result_obj, run_dir)
+    write_evidence(run_dir, result_dict)
+    maybe_create_beads_issue(integrations_cfg or {}, result_dict, run_dir)
+    return result_dict
 
-    return results
+
+def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path) -> None:
+    beads_cfg = integrations_cfg.get("beads", {})
+    if not beads_cfg:
+        return
+
+    decision = result["decision"]
+    if not (
+        (decision == "fail" and beads_cfg.get("on_failure")) or
+        (decision == "needs_human" and beads_cfg.get("on_needs_human"))
+    ):
+        return
+
+    try:
+        summary = (run_dir / "summary.md").read_text()[:4096]
+    except FileNotFoundError:
+        summary = f"foundry run {result['run_id']} {decision}"
+
+    commit = result["repo"]["commit"]
+    title = f"foundry: {result['profile']} {decision} @ {commit[:7]}"
+
+    try:
+        proc = subprocess.run(
+            ["bd", "create", "--title", title, "--description", summary, "--type", "bug", "--priority", "2"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        print("[foundry] warning: bd not found in PATH, skipping beads issue creation", file=sys.stderr)
+        return
+
+    if proc.returncode != 0:
+        print(f"[foundry] warning: bd create failed: {proc.stderr.strip()}", file=sys.stderr)
+        return
+
+    issue_id = proc.stdout.strip().split()[-1]
+    print(f"[foundry] beads issue created: {issue_id}", file=sys.stderr)
+    result["beads_issue_id"] = issue_id
