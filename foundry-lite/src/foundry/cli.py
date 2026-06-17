@@ -27,7 +27,10 @@ def cmd_doctor(args):
 
 def cmd_run(args):
     repo = _repo(args)
-    profile_name = args.profile
+    profile_name = args.profile or args.profile_flag
+    if not profile_name:
+        print("error: profile is required (positional or --profile NAME)", file=sys.stderr)
+        sys.exit(1)
 
     try:
         cfg = load_config(str(repo / "foundry.yaml"))
@@ -54,9 +57,9 @@ def cmd_run(args):
     write_gitignore_if_missing(foundry_dir)
 
     print(f"[foundry] profile: {profile_name}", file=sys.stderr)
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     gate_results = run_profile(profile, profile_name, run_dir, repo)
-    finished_at = datetime.now(timezone.utc).isoformat()
+    finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     git = get_git_info(str(repo))
     decision = derive_decision(gate_results)
@@ -132,7 +135,9 @@ def main():
     sub.add_parser("doctor", help="Check environment")
 
     run_p = sub.add_parser("run", help="Run a profile")
-    run_p.add_argument("profile", help="Profile name from foundry.yaml")
+    run_p.add_argument("profile", nargs="?", default=None, help="Profile name from foundry.yaml")
+    run_p.add_argument("--profile", dest="profile_flag", default=None, metavar="NAME",
+                       help="Alias for positional profile (for scripting convenience)")
     run_p.add_argument("--json", action="store_true", help="Print result.json to stdout")
     run_p.add_argument("--dry-run", action="store_true", help="Show gates without running")
 

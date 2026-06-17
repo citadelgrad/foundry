@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from croniter import CroniterBadCronError, croniter
+
 from foundry.config import FoundryConfig
 
 SCHEDULE_REGISTRY = Path.home() / ".foundry_schedules.json"
@@ -16,6 +18,10 @@ def install_schedule(name: str, config: FoundryConfig, repo_path: str) -> None:
         raise ValueError(f'Schedule "{name}" not found in foundry.yaml')
 
     schedule = config.schedules[name]
+    try:
+        croniter(schedule.cron)
+    except (CroniterBadCronError, ValueError) as e:
+        raise ValueError(f'Invalid cron expression "{schedule.cron}": {e}')
     foundry_bin = shutil.which("foundry") or f"{sys.executable} -m foundry"
 
     if platform.system() == "Darwin":

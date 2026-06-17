@@ -47,7 +47,9 @@ def run_doctor(repo_path: Path) -> int:
     if has_act_gates:
         act_path = shutil.which("act")
         if act_path:
-            checks.append(("PASS", f"act: found at {act_path}"))
+            ver = subprocess.run(["act", "--version"], capture_output=True, text=True).stdout.strip()
+            ver_tag = f"v{ver}" if ver and not ver.startswith("v") else ver
+            checks.append(("PASS", f"act: found at {act_path} ({ver_tag})"))
         else:
             checks.append(("FAIL", "act: not found on PATH (required for Act gates)"))
 
@@ -75,9 +77,9 @@ def run_doctor(repo_path: Path) -> int:
         wf_dir = repo_path / ".github" / "workflows"
         wf_files = list(wf_dir.glob("*.yml")) + list(wf_dir.glob("*.yaml")) if wf_dir.exists() else []
         if wf_files:
-            checks.append(("PASS", f"workflows: found {len(wf_files)} workflow files"))
+            checks.append(("PASS", f".github/workflows: found {len(wf_files)} workflow files"))
         else:
-            checks.append(("WARN", "workflows: no workflow files found (Act gates will fail)"))
+            checks.append(("WARN", ".github/workflows: no workflows found (Act gates will fail)"))
 
     _print_checks(checks)
     return 1 if any(level == "FAIL" for level, _ in checks) else 0
