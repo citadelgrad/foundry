@@ -53,7 +53,16 @@ def run_doctor(repo_path: Path) -> int:
         else:
             checks.append(("FAIL", "act: not found on PATH (required for Act gates)"))
 
-    # 5. Runner check — per gate command prefix
+    # 5. Dagger binary check (dagger gates only)
+    has_dagger_gates = any(gate.dagger is not None for gate in all_gates)
+    if has_dagger_gates:
+        dagger_path = shutil.which("dagger")
+        if dagger_path:
+            checks.append(("PASS", f"dagger: binary found at {dagger_path}"))
+        else:
+            checks.append(("FAIL", "dagger: not found on PATH"))
+
+    # 6. Runner check — per gate command prefix
     run_gates = [gate for gate in all_gates if gate.run]
     if run_gates:
         if any(g.run.startswith("make") for g in run_gates):

@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,10 @@ def detect_runner(run_cmd: str) -> tuple[str, str]:
 def _detect_runner(gate: GateConfig) -> tuple[str, str]:
     if gate.act:
         return "act", f"act {gate.act.event} -W {gate.act.workflow}"
+    if gate.dagger:
+        d = gate.dagger
+        cmd = ["dagger", "call", "-m", d.module, d.function] + (d.args or [])
+        return "dagger", " ".join(cmd)
     return detect_runner(gate.run)
 
 
@@ -77,6 +82,9 @@ def get_git_info(repo_path: str) -> dict:
 
 
 def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path) -> GateResult:
+    if gate.dagger:
+        from foundry.dagger_runner import run_dagger_gate
+        return run_dagger_gate(gate, log_dir, repo_path)
     gate_id = gate.id
     runner_type, cmd = _detect_runner(gate)
     timeout_secs = parse_timeout(gate.timeout)
@@ -172,7 +180,18 @@ def derive_decision(gate_results: list[GateResult]) -> str:
     return "pass"
 
 
+def run_profile_parallel(profile: ProfileConfig, run_dir: Path, repo_path: Path) -> list[GateResult]:
+    log_dir = run_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=len(profile.gates)) as pool:
+        futures = {pool.submit(run_gate, gate, log_dir, repo_path): gate for gate in profile.gates}
+        return [f.result() for f in futures]
+
+
 def run_profile(profile: ProfileConfig, profile_name: str, run_dir: Path, repo_path: Path) -> list[GateResult]:
+    if profile.parallel:
+        return run_profile_parallel(profile, run_dir, repo_path)
+
     log_dir = run_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     gates = profile.gates

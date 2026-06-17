@@ -14,10 +14,18 @@ class ActConfig:
 
 
 @dataclass
+class DaggerBlock:
+    module: str
+    function: str
+    args: list[str] = field(default_factory=list)
+
+
+@dataclass
 class GateConfig:
     id: str
     run: str | None = None
     act: ActConfig | None = None
+    dagger: DaggerBlock | None = None
     timeout: str = "10m"
     allow_failure: bool = False
     decision_on_failure: str = "fail"
@@ -26,6 +34,7 @@ class GateConfig:
 @dataclass
 class ProfileConfig:
     gates: list[GateConfig]
+    parallel: bool = False
 
 
 @dataclass
@@ -63,15 +72,22 @@ def _build(cfg: dict) -> FoundryConfig:
         for g in pdata.get("gates", []):
             act_raw = g.get("act")
             act = ActConfig(workflow=act_raw["workflow"], event=act_raw.get("event", "push")) if act_raw else None
+            dagger_raw = g.get("dagger")
+            dagger = DaggerBlock(
+                module=dagger_raw["module"],
+                function=dagger_raw["function"],
+                args=dagger_raw.get("args", []),
+            ) if dagger_raw else None
             gates.append(GateConfig(
                 id=g["id"],
                 run=g.get("run"),
                 act=act,
+                dagger=dagger,
                 timeout=g.get("timeout", "10m"),
                 allow_failure=g.get("allow_failure", False),
                 decision_on_failure=g.get("decision_on_failure", "fail"),
             ))
-        profiles[name] = ProfileConfig(gates=gates)
+        profiles[name] = ProfileConfig(gates=gates, parallel=pdata.get("parallel", False))
 
     schedules = {}
     for name, sdata in cfg.get("schedules", {}).items():
@@ -88,10 +104,8 @@ def validate_config(cfg: dict) -> list[str]:
         for gate in profile.get("gates", []):
             if not gate.get("id"):
                 errors.append(f"profile '{name}' has gate missing 'id'")
-            has_run = "run" in gate
-            has_act = "act" in gate
-            if has_run == has_act:
-                errors.append(f"profile '{name}' gate '{gate.get('id')}' must have exactly one of 'run' or 'act'")
+            if sum(["run" in gate, "act" in gate, "dagger" in gate]) != 1:
+                errors.append(f"profile '{name}' gate '{gate.get('id')}' must have exactly one of 'run', 'act', or 'dagger'")
             if gate.get("decision_on_failure", "fail") == "warn" and not gate.get("allow_failure", False):
                 errors.append(f"gate '{gate.get('id')}': decision_on_failure='warn' requires allow_failure=true")
     return errors

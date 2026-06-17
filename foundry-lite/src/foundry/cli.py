@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,12 +44,23 @@ def cmd_run(args):
         sys.exit(1)
 
     profile = cfg.profiles[profile_name]
+    debounce_seconds = float(args.debounce.rstrip("s"))
+
+    if args.watch and args.json:
+        print("Cannot use --json with --watch", file=sys.stderr)
+        sys.exit(1)
 
     if args.dry_run:
         for gate in profile.gates:
             info = gate.run or f"act {gate.act.event} -W {gate.act.workflow}"
             print(f"  {gate.id}: {info}")
         sys.exit(0)
+
+    if args.watch:
+        from foundry.watcher import FoundryWatcher
+        watcher = FoundryWatcher(repo=repo, profile=profile_name, debounce=debounce_seconds)
+        watcher.start()
+        return
 
     run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
     foundry_dir = repo / ".foundry"
@@ -103,6 +115,20 @@ def cmd_latest(args):
         print(f"{result['started_at']}  {result['profile']}  {result['decision']}  {total_s}s")
 
 
+def cmd_explain(args):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("ANTHROPIC_API_KEY not set. Required for foundry explain.", file=sys.stderr)
+        sys.exit(1)
+    repo = _repo(args)
+    if args.run:
+        run_dir = repo / ".foundry" / "runs" / args.run
+    else:
+        run_dir = (repo / ".foundry" / "latest").resolve()
+    from foundry.explain import explain_run
+    print(explain_run(run_dir, args.model))
+    sys.exit(0)
+
+
 def cmd_schedule(args):
     repo = _repo(args)
     if args.schedule_cmd == "remove":
@@ -140,6 +166,13 @@ def main():
                        help="Alias for positional profile (for scripting convenience)")
     run_p.add_argument("--json", action="store_true", help="Print result.json to stdout")
     run_p.add_argument("--dry-run", action="store_true", help="Show gates without running")
+    run_p.add_argument("--watch", action="store_true", help="Re-run on file changes")
+    run_p.add_argument("--debounce", default="2s", help="Debounce interval (e.g. 2s)")
+
+    explain_p = sub.add_parser("explain", help="Explain latest run with AI")
+    explain_p.add_argument("--latest", action="store_true", default=True, help="Use latest run (default)")
+    explain_p.add_argument("--run", default=None, metavar="RUN_ID", help="Specific run ID")
+    explain_p.add_argument("--model", default="claude-haiku-4-5-20251001", help="Model to use")
 
     latest_p = sub.add_parser("latest", help="Show latest run result")
     latest_p.add_argument("--json", action="store_true")
@@ -159,7 +192,7 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    dispatch = {"doctor": cmd_doctor, "run": cmd_run, "latest": cmd_latest, "schedule": cmd_schedule}
+    dispatch = {"doctor": cmd_doctor, "run": cmd_run, "latest": cmd_latest, "explain": cmd_explain, "schedule": cmd_schedule}
     if args.command in dispatch:
         if args.command == "schedule" and args.schedule_cmd is None:
             sched_p.print_help()
