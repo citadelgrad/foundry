@@ -1,0 +1,19 @@
+foundry-lite/Makefile
+  s_f3d15d67320de3::t_8b42000074b689 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "4e248679e155a759720fdb53663016a921538978",
+  "prompts": {},
+  "sessions": {
+    "s_f3d15d67320de3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35cbb6fb-d22c-46f4-84e6-d45409aced08",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
