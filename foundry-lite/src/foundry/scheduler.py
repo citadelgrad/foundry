@@ -35,7 +35,24 @@ def install_schedule(name: str, config: FoundryConfig, repo_path: str) -> None:
 
 def _install_launchd(name, profile, cron, repo_path, foundry_bin):
     parts = cron.strip().split()
-    minute, hour = parts[0], parts[1]
+    minute, hour, day, month, weekday = parts
+
+    def _calendar_field(key: str, value: str) -> str:
+        if value == "*":
+            return ""
+        if not value.isdigit():
+            raise ValueError(
+                f"launchd schedules only support numeric or '*' cron fields; got {key}={value!r}"
+            )
+        return f"    <key>{key}</key>\n    <integer>{value}</integer>\n"
+
+    calendar = (
+        _calendar_field("Minute", minute)
+        + _calendar_field("Hour", hour)
+        + _calendar_field("Day", day)
+        + _calendar_field("Month", month)
+        + _calendar_field("Weekday", weekday)
+    )
 
     plist_path = Path.home() / "Library" / "LaunchAgents" / f"com.foundry.{name}.plist"
     plist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,10 +72,7 @@ def _install_launchd(name, profile, cron, repo_path, foundry_bin):
   </array>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Hour</key>
-    <integer>{hour}</integer>
-    <key>Minute</key>
-    <integer>{minute}</integer>
+{calendar.rstrip()}
   </dict>
   <key>StandardOutPath</key>
   <string>/tmp/foundry-{name}.log</string>

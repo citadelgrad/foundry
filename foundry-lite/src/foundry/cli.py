@@ -202,6 +202,9 @@ def cmd_schedule(args):
 
 def main():
     fmt = argparse.RawDescriptionHelpFormatter
+    repo_parent = argparse.ArgumentParser(add_help=False)
+    repo_parent.add_argument("--repo", default=argparse.SUPPRESS, help="Path to repository (default: .)")
+
     # ponytail: shared parent so --repo works after any subcommand
     parser = argparse.ArgumentParser(
         prog="foundry",
@@ -222,14 +225,14 @@ def main():
     parser.add_argument("--repo", default=".", help="Path to repository (default: .)")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("doctor", help="Check environment and tool dependencies",
+    sub.add_parser("doctor", parents=[repo_parent], help="Check environment and tool dependencies",
                    formatter_class=fmt,
                    epilog="examples:\n  foundry doctor\n  foundry doctor --repo /path/to/repo")
-    sub.add_parser("init", help="Generate foundry.yaml from detected gates",
+    sub.add_parser("init", parents=[repo_parent], help="Generate foundry.yaml from detected gates",
                    formatter_class=fmt,
                    epilog="examples:\n  foundry init\n  foundry init --repo /path/to/repo")
 
-    run_p = sub.add_parser("run", help="Run a profile",
+    run_p = sub.add_parser("run", parents=[repo_parent], help="Run a profile",
                            formatter_class=fmt,
                            epilog=(
                                "examples:\n"
@@ -248,7 +251,7 @@ def main():
     run_p.add_argument("--watch", action="store_true", help="Re-run on file changes")
     run_p.add_argument("--debounce", default="2s", metavar="DURATION", help="Debounce interval for --watch (default: 2s)")
 
-    explain_p = sub.add_parser("explain", help="Explain latest run with AI",
+    explain_p = sub.add_parser("explain", parents=[repo_parent], help="Explain latest run with AI",
                                formatter_class=fmt,
                                epilog=(
                                    "examples:\n"
@@ -265,7 +268,7 @@ def main():
     explain_p.add_argument("--model", default="gemini-3.5-flash", metavar="MODEL",
                            help="Model to use: gemini-* or claude-* (default: gemini-3.5-flash)")
 
-    latest_p = sub.add_parser("latest", help="Show latest run result",
+    latest_p = sub.add_parser("latest", parents=[repo_parent], help="Show latest run result",
                               formatter_class=fmt,
                               epilog=(
                                   "examples:\n"
@@ -278,7 +281,7 @@ def main():
     latest_p.add_argument("--summary", action="store_true", help="Print markdown summary")
     latest_p.add_argument("--evidence", action="store_true", help="Print raw evidence.json")
 
-    sched_p = sub.add_parser("schedule", help="Manage schedules",
+    sched_p = sub.add_parser("schedule", parents=[repo_parent], help="Manage schedules",
                              formatter_class=fmt,
                              epilog=(
                                  "examples:\n"
@@ -297,7 +300,7 @@ def main():
     remove_p.add_argument("name", help="Schedule name to remove")
     sched_sub.add_parser("list", help="List installed schedules")
 
-    repos_p = sub.add_parser("repos", help="Manage tracked repos",
+    repos_p = sub.add_parser("repos", parents=[repo_parent], help="Manage tracked repos",
                              formatter_class=fmt,
                              epilog=(
                                  "examples:\n"

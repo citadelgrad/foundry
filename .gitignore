@@ -14,3 +14,7 @@ __pycache__/
 
 # Pipeline artifacts
 .pas/
+
+# TLDR analysis cache
+.tldr/
+.tldrignore
