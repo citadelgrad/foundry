@@ -49,6 +49,10 @@ class FoundryConfig:
     profiles: dict[str, ProfileConfig]
     schedules: dict[str, ScheduleConfig] = field(default_factory=dict)
     integrations: dict = field(default_factory=dict)
+    # integrations.agent.approval_required: bool (default False)
+    # When True:  on failure, write next_action with status=pending_approval
+    #             and do NOT fire integrations.agent.command automatically.
+    # When False: existing auto-fire behavior unchanged.
 
 
 def load_config(path: str = "foundry.yaml") -> FoundryConfig:

@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from foundry.config import FoundryConfig, GateConfig, ProfileConfig, parse_timeout
+from foundry.explain import explain_run, extract_next_action
+from foundry.output import write_next_action, write_run_index, resolve_next_action_for_run
 
 
 LOG_SIZE_CAP = 512 * 1024  # 512KB
@@ -244,6 +246,18 @@ def run_profile(
     result_dict = write_result_json(run_result_obj, run_dir)
     write_summary_md(run_result_obj, run_dir)
     write_evidence(run_dir, result_dict)
+    write_run_index(run_dir, result_dict)
+    if result_dict["decision"] == "fail":
+        try:
+            explain_cfg = (integrations_cfg or {}).get("explain", {})
+            model = explain_cfg.get("model", "claude-haiku-4-5-20251001")
+            explanation = explain_run(run_dir, model)
+            next_action = extract_next_action(explanation)
+            write_next_action(run_dir, result_dict, explanation, next_action)
+        except Exception as e:
+            print(f"[foundry] auto-explain failed: {e}", file=sys.stderr)
+    if result_dict["decision"] == "pass":
+        resolve_next_action_for_run(result_dict["repo"]["path"], result_dict["profile"])
     _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path)
     return result_dict
 
@@ -274,14 +288,17 @@ def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo
     maybe_create_beads_issue(integrations_cfg, result, run_dir, explanation)
 
     agent_cfg = integrations_cfg.get("agent", {})
-    if agent_cfg and agent_cfg.get("on_failure"):
-        cmd_template = agent_cfg.get("command", "claude --print 'Foundry run failed. See {run_dir}/result.json'")
-        cmd = cmd_template.format(run_dir=run_dir)
-        try:
-            subprocess.Popen(["sh", "-c", cmd], cwd=str(repo_path), start_new_session=True)
-            print(f"[foundry] agent spawned: {cmd}", file=sys.stderr)
-        except Exception as e:
-            print(f"[foundry] agent spawn failed: {e}", file=sys.stderr)
+    if agent_cfg and agent_cfg.get("on_failure") and decision == "fail":
+        if agent_cfg.get("approval_required"):
+            pass  # next_action already written; agent blocked pending approval
+        else:
+            cmd_template = agent_cfg.get("command", "claude --print 'Foundry run failed. See {run_dir}/result.json'")
+            cmd = cmd_template.format(run_dir=run_dir)
+            try:
+                subprocess.Popen(["sh", "-c", cmd], cwd=str(repo_path), start_new_session=True)
+                print(f"[foundry] agent spawned: {cmd}", file=sys.stderr)
+            except Exception as e:
+                print(f"[foundry] agent spawn failed: {e}", file=sys.stderr)
 
 
 def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path, explanation: str | None = None) -> None:

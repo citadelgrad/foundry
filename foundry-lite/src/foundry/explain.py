@@ -20,7 +20,7 @@ def _tail(path: Path, nbytes: int) -> str:
         return ""
 
 
-def _call_model(model: str, prompt: str) -> str:
+def _call_model(model: str, prompt: str, max_tokens: int = 512) -> str:
     if model.startswith("gemini-"):
         from google import genai
         client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
@@ -30,10 +30,10 @@ def _call_model(model: str, prompt: str) -> str:
         client = anthropic.Anthropic()
         response = client.messages.create(
             model=model,
-            max_tokens=512,
+            max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text
+        return response.content[0].text.strip()
 
 
 def required_env_key(model: str) -> str:
@@ -62,3 +62,12 @@ def explain_run(run_dir: Path, model: str = "gemini-3.5-flash") -> str:
         explanations.append(f"## Gate: {gate_id} ({status})\n\n{text}")
 
     return "\n\n".join(explanations) if explanations else "No failed or timed-out gates to explain."
+
+
+def extract_next_action(explanation: str) -> str:
+    prompt = (
+        f"Given this gate failure explanation:\n\n{explanation}\n\n"
+        "Write ONE sentence describing the most important action to fix this. "
+        "Start with a verb. No preamble."
+    )
+    return _call_model("claude-haiku-4-5-20251001", prompt, max_tokens=100)
