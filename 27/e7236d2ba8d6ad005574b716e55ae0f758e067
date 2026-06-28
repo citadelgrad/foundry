@@ -1,0 +1,28 @@
+FOUNDRY-NOTES.md
+  s_7e58f00c7452aa::t_303c48dcc012f6 286
+.gitignore
+  s_7e58f00c7452aa::t_5ebe67875a19bd 2-8
+foundry-lite/pyproject.toml
+  s_7e58f00c7452aa::t_ae9afd311324a0 4-7
+  s_7e58f00c7452aa::t_c8b7361a535e1c 20-22
+LICENSE
+  s_7e58f00c7452aa::t_a69a65bd5d211f 1-21
+README.md
+  s_7e58f00c7452aa::t_693afa41111a60 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "27e7236d2ba8d6ad005574b716e55ae0f758e067",
+  "prompts": {},
+  "sessions": {
+    "s_7e58f00c7452aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c14f35f5-8223-4165-9cf3-057b0e16fe42",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
