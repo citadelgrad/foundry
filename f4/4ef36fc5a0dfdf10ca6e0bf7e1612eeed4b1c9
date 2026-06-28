@@ -1,0 +1,31 @@
+foundry-lite/pyproject.toml
+  s_7e58f00c7452aa::t_42a790d15dec53 3
+docs/specs/foundry-run-index-prd.md
+  s_466c2abb522cc8::t_4a4f42825f6bda 1-68
+docs/specs/foundry-run-index-spec.md
+  s_466c2abb522cc8::t_15e353adc05087 1-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f44ef36fc5a0dfdf10ca6e0bf7e1612eeed4b1c9",
+  "prompts": {},
+  "sessions": {
+    "s_466c2abb522cc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "297e7d1a-d6f2-4dbf-8c3c-96b5d6e22a66",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_7e58f00c7452aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c14f35f5-8223-4165-9cf3-057b0e16fe42",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
