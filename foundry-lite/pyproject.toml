@@ -1,6 +1,6 @@
 [project]
 name = "foundry"
-version = "0.2.0"
+version = "0.3.0"
 description = "Gate-based CI pipeline runner for local and scheduled workflows"
 readme = "../README.md"
 license = {text = "MIT"}

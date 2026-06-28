@@ -1,0 +1,24 @@
+version: 1
+
+profiles:
+  security:
+    docker:
+      image: ghcr.io/citadelgrad/foundry-runner:latest
+      volumes:
+        - ~/.claude:/home/node/.claude:ro
+    gates:
+      - id: owasp-scan
+        run: claude -p "/security-review" --dangerously-skip-permissions
+        timeout: 30m
+        allow_failure: true
+        decision_on_failure: warn
+      - id: ubs-scan
+        run: ubs . --profile=strict --format=toon
+        timeout: 30m
+        allow_failure: true
+        decision_on_failure: warn
+
+schedules:
+  weekly-security-foundry:
+    profile: security
+    cron: "0 4 * * 0"

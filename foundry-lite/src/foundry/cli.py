@@ -53,8 +53,18 @@ def cmd_run(args):
         sys.exit(1)
 
     if args.dry_run:
+        from foundry.runner import _resolve_docker, _wrap_docker
+        repo = _repo(args)
         for gate in profile.gates:
-            info = gate.run or f"act {gate.act.event} -W {gate.act.workflow}"
+            if gate.act:
+                info = f"act {gate.act.event} -W {gate.act.workflow}"
+            else:
+                docker = _resolve_docker(gate, profile.docker)
+                if docker:
+                    base = ["sh", "-c", gate.run] if gate.run else gate.run.split()
+                    info = " ".join(_wrap_docker(base, docker, repo))
+                else:
+                    info = gate.run
             print(f"  {gate.id}: {info}")
         sys.exit(0)
 

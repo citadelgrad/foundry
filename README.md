@@ -5,7 +5,7 @@ A gate-based CI pipeline runner for local and scheduled workflows. Define qualit
 ## Install
 
 ```bash
-pip install foundry-lite   # or: uv add foundry
+uv add foundry-lite
 ```
 
 Or from source:
@@ -62,6 +62,32 @@ Each gate runs a shell command. Gates are **fail-fast** by default — first fai
 | `decision_on_failure` | `fail` | `fail` or `warn` |
 
 Emit `FOUNDRY_NEEDS_HUMAN` from any gate to pause and request human review.
+
+## Container isolation
+
+Add a `docker:` block to a profile to run all its `run:` gates inside a container. Gates using `act:` manage their own containers and are unaffected.
+
+```yaml
+profiles:
+  security:
+    docker:
+      image: ghcr.io/citadelgrad/foundry-runner:latest
+      volumes:
+        - ~/.claude:/home/node/.claude:ro   # subscription credentials, read-only
+    gates:
+      - id: owasp-scan
+        run: claude -p "/security-review" --dangerously-skip-permissions
+        timeout: 30m
+        allow_failure: true
+      - id: ubs-scan
+        run: ubs . --profile=strict --format=toon
+        timeout: 30m
+        allow_failure: true
+```
+
+Gate-level `docker:` overrides the profile default for that gate only.
+
+The `foundry-runner` image (`ghcr.io/citadelgrad/foundry-runner:latest`) ships with `claude-code` and `ubs`/`tru` pre-installed. Auth is handled via the `~/.claude` volume mount — no API keys required.
 
 ## CLI reference
 

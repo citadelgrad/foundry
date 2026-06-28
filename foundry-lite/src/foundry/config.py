@@ -21,11 +21,18 @@ class DaggerBlock:
 
 
 @dataclass
+class DockerConfig:
+    image: str
+    volumes: list[str] = field(default_factory=list)
+
+
+@dataclass
 class GateConfig:
     id: str
     run: str | None = None
     act: ActConfig | None = None
     dagger: DaggerBlock | None = None
+    docker: DockerConfig | None = None  # gate-level override; inherits profile docker if absent
     timeout: str = "10m"
     allow_failure: bool = False
     decision_on_failure: str = "fail"
@@ -35,6 +42,7 @@ class GateConfig:
 class ProfileConfig:
     gates: list[GateConfig]
     parallel: bool = False
+    docker: DockerConfig | None = None  # default for all gates in this profile
 
 
 @dataclass
@@ -70,6 +78,12 @@ def load_config(path: str = "foundry.yaml") -> FoundryConfig:
     return _build(cfg)
 
 
+def _parse_docker(raw: dict | None) -> DockerConfig | None:
+    if not raw:
+        return None
+    return DockerConfig(image=raw["image"], volumes=raw.get("volumes", []))
+
+
 def _build(cfg: dict) -> FoundryConfig:
     profiles = {}
     for name, pdata in cfg.get("profiles", {}).items():
@@ -88,11 +102,16 @@ def _build(cfg: dict) -> FoundryConfig:
                 run=g.get("run"),
                 act=act,
                 dagger=dagger,
+                docker=_parse_docker(g.get("docker")),
                 timeout=g.get("timeout", "10m"),
                 allow_failure=g.get("allow_failure", False),
                 decision_on_failure=g.get("decision_on_failure", "fail"),
             ))
-        profiles[name] = ProfileConfig(gates=gates, parallel=pdata.get("parallel", False))
+        profiles[name] = ProfileConfig(
+            gates=gates,
+            parallel=pdata.get("parallel", False),
+            docker=_parse_docker(pdata.get("docker")),
+        )
 
     schedules = {}
     for name, sdata in cfg.get("schedules", {}).items():
@@ -107,6 +126,8 @@ def validate_config(cfg: dict) -> list[str]:
     if cfg.get("version") != 1:
         errors.append("version must be 1")
     for name, profile in cfg.get("profiles", {}).items():
+        if (docker := profile.get("docker")) and not docker.get("image"):
+            errors.append(f"profile '{name}': docker block missing 'image'")
         for gate in profile.get("gates", []):
             if not gate.get("id"):
                 errors.append(f"profile '{name}' has gate missing 'id'")
@@ -114,6 +135,8 @@ def validate_config(cfg: dict) -> list[str]:
                 errors.append(f"profile '{name}' gate '{gate.get('id')}' must have exactly one of 'run', 'act', or 'dagger'")
             if gate.get("decision_on_failure", "fail") == "warn" and not gate.get("allow_failure", False):
                 errors.append(f"gate '{gate.get('id')}': decision_on_failure='warn' requires allow_failure=true")
+            if (docker := gate.get("docker")) and not docker.get("image"):
+                errors.append(f"gate '{gate.get('id')}': docker block missing 'image'")
     return errors
 
 

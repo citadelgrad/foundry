@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from foundry.config import FoundryConfig, GateConfig, ProfileConfig, parse_timeout
+from foundry.config import DockerConfig, FoundryConfig, GateConfig, ProfileConfig, parse_timeout
 
 
 LOG_SIZE_CAP = 512 * 1024  # 512KB
@@ -65,6 +65,22 @@ def _detect_runner(gate: GateConfig) -> tuple[str, str]:
     return detect_runner(gate.run)
 
 
+def _resolve_docker(gate: GateConfig, profile_docker: DockerConfig | None) -> DockerConfig | None:
+    return gate.docker or profile_docker
+
+
+def _wrap_docker(shell_cmd: list[str], docker: DockerConfig, repo_path: Path) -> list[str]:
+    home = str(Path.home())
+    args = ["docker", "run", "--rm",
+            "-v", f"{repo_path}:/workspace",
+            "-w", "/workspace"]
+    for vol in docker.volumes:
+        args += ["-v", vol.replace("~", home)]
+    args.append(docker.image)
+    args += shell_cmd
+    return args
+
+
 def get_git_info(repo_path: str) -> dict:
     def _git(*args):
         try:
@@ -81,7 +97,7 @@ def get_git_info(repo_path: str) -> dict:
     return {"commit": commit, "branch": branch, "dirty": dirty}
 
 
-def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path) -> GateResult:
+def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: DockerConfig | None = None) -> GateResult:
     if gate.dagger:
         from foundry.dagger_runner import run_dagger_gate
         return run_dagger_gate(gate, log_dir, repo_path)
@@ -99,6 +115,10 @@ def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path) -> GateResult:
         shell_cmd = ["sh", "-c", gate.run]
     else:
         shell_cmd = cmd.split()
+
+    docker = _resolve_docker(gate, profile_docker)
+    if docker and runner_type != "act":  # act manages its own containers
+        shell_cmd = _wrap_docker(shell_cmd, docker, repo_path)
 
     status = "failed"
     exit_code = None
@@ -184,7 +204,7 @@ def run_profile_parallel(profile: ProfileConfig, run_dir: Path, repo_path: Path)
     log_dir = run_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(max_workers=len(profile.gates)) as pool:
-        futures = {pool.submit(run_gate, gate, log_dir, repo_path): gate for gate in profile.gates}
+        futures = {pool.submit(run_gate, gate, log_dir, repo_path, profile.docker): gate for gate in profile.gates}
         return [f.result() for f in futures]
 
 
@@ -208,7 +228,7 @@ def run_profile(
         gate_results = []
 
         for i, gate in enumerate(gates):
-            result = run_gate(gate, log_dir, repo_path)
+            result = run_gate(gate, log_dir, repo_path, profile.docker)
             gate_results.append(result)
             # ponytail: fail-fast on required gate failure
             if result.status in ("failed", "timed_out") and not result.allow_failure:
