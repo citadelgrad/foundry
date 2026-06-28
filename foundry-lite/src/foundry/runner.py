@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from foundry.config import FoundryConfig, GateConfig, ProfileConfig, parse_timeout
-from foundry.explain import explain_run, extract_next_action
-from foundry.output import write_next_action, write_run_index, resolve_next_action_for_run
 
 
 LOG_SIZE_CAP = 512 * 1024  # 512KB
@@ -242,7 +240,8 @@ def run_profile(
         dirty=gi.get("dirty", False),
         gates=gate_results,
     )
-    from foundry.output import write_evidence, write_result_json, write_summary_md
+    from foundry.output import write_evidence, write_result_json, write_summary_md, write_run_index, write_next_action, resolve_next_action_for_run
+    from foundry.explain import explain_run, extract_next_action
     result_dict = write_result_json(run_result_obj, run_dir)
     write_summary_md(run_result_obj, run_dir)
     write_evidence(run_dir, result_dict)
@@ -288,8 +287,8 @@ def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo
     maybe_create_beads_issue(integrations_cfg, result, run_dir, explanation)
 
     agent_cfg = integrations_cfg.get("agent", {})
-    if agent_cfg and agent_cfg.get("on_failure") and decision == "fail":
-        if agent_cfg.get("approval_required"):
+    if agent_cfg and agent_cfg.get("on_failure"):
+        if decision == "fail" and agent_cfg.get("approval_required"):
             pass  # next_action already written; agent blocked pending approval
         else:
             cmd_template = agent_cfg.get("command", "claude --print 'Foundry run failed. See {run_dir}/result.json'")

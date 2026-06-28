@@ -92,6 +92,7 @@ def write_next_action(run_dir: Path, result: dict, explanation: str, next_action
 
 def resolve_next_action_for_run(repo_path: str, profile: str) -> None:
     with sqlite3.connect(str(FOUNDRY_DB)) as conn:
+        _ensure_schema(conn)
         conn.execute(
             "UPDATE next_actions SET status = 'resolved', resolved_at = datetime('now')"
             " WHERE status = 'approved' AND repo_path = ? AND profile = ?",
