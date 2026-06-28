@@ -1,0 +1,42 @@
+foundry-lite/tests/test_run_index.py
+  s_5a965b64788898::t_b007b7e4ff0ce1 116-129
+  s_466c2abb522cc8::t_0f08b3e25ac0ed 153-161
+  s_466c2abb522cc8::t_68d9a3a0f62560 294-336
+  s_466c2abb522cc8::t_a8decf9775bfc6 288-293
+  s_5a965b64788898::t_a5ce4915a47aac 337-369
+  s_466c2abb522cc8::t_0beaca816519b9 1-86,94-115,130-152,162-287
+  s_466c2abb522cc8::t_10ab866a15abcf 87-93
+foundry-lite/src/foundry/output.py
+  s_466c2abb522cc8::t_c9904f605d1f45 95
+foundry-lite/src/foundry/runner.py
+  s_466c2abb522cc8::t_37a655499d39be 290-291
+  s_466c2abb522cc8::t_e292d8b3226239 243-244
+foundry-lite/pyproject.toml
+  s_466c2abb522cc8::t_aa067d3cfce057 19-23
+foundry-lite/uv.lock
+  s_466c2abb522cc8::t_de162e80e634ec 218-226,325-329,339-341,427-435,526-543,691-715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "2507b8e8a741841f944f2a28ed4c44cd7d067bed",
+  "prompts": {},
+  "sessions": {
+    "s_466c2abb522cc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "297e7d1a-d6f2-4dbf-8c3c-96b5d6e22a66",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_5a965b64788898": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac6487c3-e2f0-49aa-b7c0-e0ae780ec7da",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
