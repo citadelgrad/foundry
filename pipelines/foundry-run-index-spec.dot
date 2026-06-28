@@ -1,0 +1,390 @@
+digraph foundry_run_index_approval {
+    graph [
+        label="Foundry — Run Index & Approval Gate"
+        goal="Implement SQLite run index, auto-explain on failure, and approval gate for Foundry"
+        model="sonnet"
+        rankdir="TB"
+    ]
+
+    start [
+        label="Start"
+        shape="Mdiamond"
+        timeout="120s"
+        prompt="Pipeline start. Implement three features in foundry-lite: SQLite run index writer, auto-explain on failure, and approval gate config."
+    ]
+
+    impl_sqlite_index [
+        label="Implement SQLite Index Writer"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Read,Write,Bash"
+        prompt="Implement the SQLite index writer in foundry-lite/src/foundry/output.py.
+
+Add to output.py:
+
+IMPORTS (at top of file, after existing imports):
+    import json
+    import sqlite3
+    from pathlib import Path
+
+CONSTANT:
+    FOUNDRY_DB = Path.home() / '.foundry' / 'foundry.db'
+
+FUNCTION _ensure_schema(conn):
+    Run conn.executescript with the following SQL:
+        CREATE TABLE IF NOT EXISTS runs (
+            run_id        TEXT PRIMARY KEY,
+            repo_path     TEXT NOT NULL,
+            profile       TEXT NOT NULL,
+            decision      TEXT NOT NULL,
+            started_at    TEXT NOT NULL,
+            finished_at   TEXT NOT NULL,
+            gate_count    INTEGER NOT NULL DEFAULT 0,
+            failed_gates  TEXT,
+            result_path   TEXT NOT NULL,
+            summary_path  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS next_actions (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id              TEXT NOT NULL REFERENCES runs(run_id),
+            repo_path           TEXT NOT NULL,
+            profile             TEXT NOT NULL,
+            failed_gate_ids     TEXT NOT NULL,
+            explanation         TEXT,
+            next_action         TEXT,
+            status              TEXT NOT NULL DEFAULT 'pending_approval'
+                CHECK (status IN ('pending_approval','approved','dismissed','resolved')),
+            created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+            agent_dispatched_at TEXT,
+            resolved_at         TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_runs_repo ON runs(repo_path);
+        CREATE INDEX IF NOT EXISTS idx_runs_decision ON runs(decision);
+        CREATE INDEX IF NOT EXISTS idx_next_actions_status ON next_actions(status);
+    Then prune with separate conn.execute calls:
+        DELETE FROM runs WHERE finished_at < datetime('now', '-90 days')
+        DELETE FROM next_actions WHERE status = 'resolved' AND resolved_at < datetime('now', '-30 days')
+
+FUNCTION write_run_index(run_dir: Path, result: dict):
+    - FOUNDRY_DB.parent.mkdir(parents=True, exist_ok=True)
+    - failed_gates = [g['id'] for g in result.get('gates', []) if g['status'] in ('failed', 'timed_out')]
+    - with sqlite3.connect(str(FOUNDRY_DB)) as conn:
+        - call _ensure_schema(conn)
+        - INSERT OR REPLACE INTO runs (run_id, repo_path, profile, decision, started_at, finished_at, gate_count, failed_gates, result_path, summary_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        - values: result['run_id'], result['repo']['path'], result['profile'], result['decision'], result['started_at'], result['finished_at'], len(result.get('gates', [])), json.dumps(failed_gates), str(run_dir / 'result.json'), str(run_dir / 'summary.md')
+
+FUNCTION write_next_action(run_dir: Path, result: dict, explanation: str, next_action: str):
+    - failed_gates = [g['id'] for g in result.get('gates', []) if g['status'] in ('failed', 'timed_out')]
+    - with sqlite3.connect(str(FOUNDRY_DB)) as conn:
+        - call _ensure_schema(conn)
+        - INSERT INTO next_actions (run_id, repo_path, profile, failed_gate_ids, explanation, next_action, status) VALUES (?, ?, ?, ?, ?, ?, 'pending_approval')
+        - values: result['run_id'], result['repo']['path'], result['profile'], json.dumps(failed_gates), explanation, next_action
+
+FUNCTION resolve_next_action_for_run(repo_path: str, profile: str):
+    - with sqlite3.connect(str(FOUNDRY_DB)) as conn:
+        - UPDATE next_actions SET status = 'resolved', resolved_at = datetime('now') WHERE status = 'approved' AND repo_path = ? AND profile = ?
+        - params: (repo_path, profile)"
+    ]
+
+    verify_sqlite_index [
+        label="Verify SQLite Index Writer"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Read,Bash"
+        goal_gate="true"
+        prompt="Verify the SQLite index writer implementation in foundry-lite/src/foundry/output.py.
+
+Check each of the following. Output PASS only if ALL pass. Output FAIL listing every issue found.
+
+1. FOUNDRY_DB is defined as Path.home() / '.foundry' / 'foundry.db'
+2. _ensure_schema creates the 'runs' table with columns: run_id (TEXT PK), repo_path, profile, decision, started_at, finished_at (all TEXT NOT NULL), gate_count (INTEGER DEFAULT 0), failed_gates (TEXT nullable), result_path, summary_path (TEXT NOT NULL)
+3. _ensure_schema creates 'next_actions' table with columns: id (INTEGER PK AUTOINCREMENT), run_id (TEXT NOT NULL REFERENCES runs), repo_path, profile, failed_gate_ids (TEXT NOT NULL), explanation (TEXT nullable), next_action (TEXT nullable), status (TEXT NOT NULL DEFAULT 'pending_approval' with CHECK constraint for 4 values), created_at (TEXT DEFAULT datetime now), agent_dispatched_at (TEXT nullable), resolved_at (TEXT nullable)
+4. _ensure_schema creates all three indexes: idx_runs_repo, idx_runs_decision, idx_next_actions_status
+5. _ensure_schema prunes runs older than 90 days and resolved next_actions older than 30 days
+6. write_run_index calls FOUNDRY_DB.parent.mkdir(parents=True, exist_ok=True)
+7. write_run_index extracts failed_gates from gates where status in ('failed', 'timed_out')
+8. write_run_index uses INSERT OR REPLACE with all 10 required fields
+9. write_next_action inserts with status='pending_approval'
+10. resolve_next_action_for_run updates status='resolved' and sets resolved_at=datetime('now') WHERE status='approved' AND repo_path=? AND profile=?
+11. All three functions use sqlite3.connect as a context manager (with statement)
+12. Syntax check: run python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/output.py\").read()); print(\"OK\")'
+
+Output PASS if all 12 checks pass. Output FAIL with the list of failing checks."
+    ]
+
+    fixup_sqlite_index [
+        label="Fix SQLite Index Writer"
+        shape="box"
+        timeout="300s"
+        allowed_tools="Read,Write,Bash"
+        prompt="Fix issues in foundry-lite/src/foundry/output.py identified by the verify step.
+
+Read the verify output carefully to identify which checks failed, then fix only those issues.
+
+Common fixes needed:
+- FOUNDRY_DB must be Path.home() / '.foundry' / 'foundry.db' (not a string, not a hardcoded path)
+- _ensure_schema: must use executescript for table creation, then separate execute() calls for DELETE pruning (executescript cannot use parameterized queries)
+- next_actions status CHECK constraint must list all four values: 'pending_approval','approved','dismissed','resolved'
+- write_run_index: failed_gates extraction uses g['status'] in ('failed', 'timed_out') — note 'timed_out' not 'timeout'
+- write_run_index: gate_count = len(result.get('gates', [])) not len(result['gates'])
+- write_next_action: hardcode the literal string 'pending_approval' as the status value in the INSERT
+- resolve_next_action_for_run: WHERE clause must check status='approved' (not 'pending_approval')
+
+After fixing, run:
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/output.py\").read()); print(\"syntax OK\")'"
+    ]
+
+    impl_auto_explain [
+        label="Implement Auto-Explain on Failure"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Read,Write,Bash"
+        prompt="Implement auto-explain on failure. Modify two files: foundry-lite/src/foundry/explain.py and foundry-lite/src/foundry/runner.py.
+
+=== CHANGES TO explain.py ===
+
+Add function extract_next_action(explanation: str) -> str:
+
+    import anthropic  (add to imports if not present)
+
+    def extract_next_action(explanation: str) -> str:
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=100,
+            messages=[{'role': 'user', 'content':
+                f'Given this gate failure explanation:\n\n{explanation}\n\nWrite ONE sentence describing the most important action to fix this. Start with a verb. No preamble.'
+            }],
+        )
+        return msg.content[0].text.strip()
+
+=== CHANGES TO runner.py ===
+
+Step 1 — Add imports at the top of runner.py (after existing imports):
+    import sys
+    from foundry.output import write_run_index, write_next_action, resolve_next_action_for_run
+    from foundry.explain import explain_run, extract_next_action
+
+Step 2 — Find where write_result and write_summary are called (this is where the run output is written after a run completes). Add a call to write_run_index immediately after those calls:
+    write_run_index(run_dir, result)
+
+Step 3 — Immediately after the write_run_index call, add the auto-explain block:
+    if result['decision'] == 'fail':
+        try:
+            explain_cfg = (integrations_cfg or {}).get('explain', {})
+            model = explain_cfg.get('model', 'claude-haiku-4-5-20251001')
+            explanation = explain_run(run_dir, model)
+            next_action = extract_next_action(explanation)
+            write_next_action(run_dir, result, explanation, next_action)
+        except Exception as e:
+            print(f'[foundry] auto-explain failed: {e}', file=sys.stderr)
+
+Step 4 — Also after the write_run_index call (can be after the fail block), add the resolve block:
+    if result['decision'] == 'pass':
+        resolve_next_action_for_run(result['repo']['path'], result['profile'])
+
+IMPORTANT: write_run_index must be called for EVERY run (both pass and fail). The fail and pass branches are downstream of write_run_index. If integrations_cfg is not already available as a variable in that scope, look for how config/integrations are accessed in the existing runner.py and use the same pattern."
+    ]
+
+    verify_auto_explain [
+        label="Verify Auto-Explain on Failure"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Read,Bash"
+        goal_gate="true"
+        prompt="Verify the auto-explain on failure implementation. Check both files.
+
+=== Check foundry-lite/src/foundry/explain.py ===
+1. extract_next_action(explanation: str) -> str function exists
+2. Uses anthropic.Anthropic() (not legacy anthropic.Client)
+3. model='claude-haiku-4-5-20251001'
+4. max_tokens=100
+5. Single user message asking for ONE sentence starting with a verb, no preamble
+6. Returns msg.content[0].text.strip()
+
+=== Check foundry-lite/src/foundry/runner.py ===
+7. write_run_index is imported from foundry.output
+8. write_next_action is imported from foundry.output
+9. resolve_next_action_for_run is imported from foundry.output
+10. explain_run is imported from foundry.explain
+11. extract_next_action is imported from foundry.explain
+12. write_run_index is called unconditionally after each run completes (not inside a fail/pass branch)
+13. There is a try/except Exception block after write_run_index for decision=='fail' that calls explain_run, extract_next_action, write_next_action
+14. The except clause prints to sys.stderr and does NOT re-raise the exception
+15. There is a check for decision=='pass' that calls resolve_next_action_for_run with repo_path and profile
+16. The pass branch does NOT raise or cause any error if no rows to resolve
+
+Syntax checks:
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/explain.py\").read()); print(\"explain OK\")'
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/runner.py\").read()); print(\"runner OK\")'
+
+Output PASS if all 16 checks pass plus syntax checks. Output FAIL listing every issue."
+    ]
+
+    fixup_auto_explain [
+        label="Fix Auto-Explain Implementation"
+        shape="box"
+        timeout="300s"
+        allowed_tools="Read,Write,Bash"
+        prompt="Fix issues in foundry-lite/src/foundry/explain.py and/or foundry-lite/src/foundry/runner.py identified by the verify step.
+
+Read the verify output to identify exactly which checks failed.
+
+Common fixes for explain.py:
+- Must use anthropic.Anthropic() not anthropic.Client() or anthropic.Anthropic(api_key=...)
+- model must be exactly 'claude-haiku-4-5-20251001'
+- max_tokens=100 (not 128, not 200)
+- Return value must be msg.content[0].text.strip()
+
+Common fixes for runner.py:
+- write_run_index call must be OUTSIDE any if/else branch — it runs for every decision value
+- The try/except must catch bare Exception (not specific exceptions)
+- The except must NOT re-raise: just print the warning and continue
+- resolve_next_action_for_run args are positional strings: result['repo']['path'] and result['profile']
+- If integrations_cfg variable doesn't exist in scope, find how config is accessed (may be named 'config', 'cfg', 'foundry_config') and do config.get('integrations', {}).get('explain', {})
+
+After fixing, run syntax checks:
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/explain.py\").read()); print(\"OK\")'
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/runner.py\").read()); print(\"OK\")'"
+    ]
+
+    impl_approval_gate [
+        label="Implement Approval Gate Config"
+        shape="box"
+        timeout="900s"
+        allowed_tools="Read,Write,Bash"
+        prompt="Implement the approval_required flag. Modify foundry-lite/src/foundry/config.py and foundry-lite/src/foundry/runner.py.
+
+=== CHANGES TO config.py ===
+
+Find where integrations.agent config is parsed or validated. Add support for an optional boolean field approval_required (default False). This field lives under integrations.agent in foundry.yaml.
+
+If config.py uses a schema/dataclass/TypedDict for the agent integration config, add:
+    approval_required: bool = False
+
+If config.py uses dict-based parsing without strict schema validation, add a comment block near the agent config section:
+    # integrations.agent.approval_required: bool (default False)
+    # When True:  on failure, write next_action with status=pending_approval
+    #             and do NOT fire integrations.agent.command automatically.
+    # When False: existing auto-fire behavior unchanged.
+
+The key requirement is that a foundry.yaml with approval_required: true under integrations.agent must NOT cause a config parse error or validation failure.
+
+=== CHANGES TO runner.py ===
+
+Find the existing block where the agent command is fired on failure. It will look for agent_cfg or config['integrations']['agent'] and check on_failure, then call something like fire_agent() or subprocess.run() with the agent command.
+
+Replace that agent-firing block with:
+
+    agent_cfg = config.get('integrations', {}).get('agent', {})
+    if agent_cfg.get('on_failure') and result['decision'] == 'fail':
+        if agent_cfg.get('approval_required'):
+            pass  # next_action already written above; exit without firing agent
+        else:
+            fire_agent(agent_cfg['command'], run_dir)
+
+IMPORTANT ORDERING: This approval gate block must appear AFTER the auto-explain try/except block. The sequence must be:
+1. write_run_index(run_dir, result)   -- for all runs
+2. if fail: try auto-explain → write_next_action except: print warning   -- writes pending_approval row
+3. if pass: resolve_next_action_for_run(...)
+4. agent_cfg approval gate check   -- AFTER next_action is written
+
+Do NOT remove or modify the fire_agent function itself. Only change the conditional that calls it."
+    ]
+
+    verify_approval_gate [
+        label="Verify Approval Gate"
+        shape="diamond"
+        node_type="conditional"
+        timeout="300s"
+        allowed_tools="Read,Bash"
+        goal_gate="true"
+        prompt="Verify the approval gate implementation in config.py and runner.py.
+
+=== Check foundry-lite/src/foundry/config.py ===
+1. approval_required field is supported under integrations.agent (as dataclass field, TypedDict key, or documented comment)
+2. The field defaults to False (either via default=False in dataclass or by using .get('approval_required', False) in runner.py)
+3. No existing config parsing will raise an error when approval_required: true appears in foundry.yaml
+
+=== Check foundry-lite/src/foundry/runner.py ===
+4. There is a block that reads agent_cfg = config.get('integrations', {}).get('agent', {}) (or equivalent)
+5. The block checks agent_cfg.get('on_failure') AND result['decision'] == 'fail'
+6. Inside that block, when agent_cfg.get('approval_required') is True: NO fire_agent call is made (pass statement or equivalent no-op)
+7. Inside that block, when approval_required is False or absent: fire_agent (or equivalent) IS called with the agent command
+8. This approval gate block appears AFTER the auto-explain try/except block in the code flow (so next_action row exists before we skip the agent)
+9. The fire_agent function itself is unchanged
+
+Syntax checks:
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/config.py\").read()); print(\"config OK\")'
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/runner.py\").read()); print(\"runner OK\")'
+
+Output PASS if all 9 checks pass plus syntax checks. Output FAIL listing every issue."
+    ]
+
+    fixup_approval_gate [
+        label="Fix Approval Gate"
+        shape="box"
+        timeout="300s"
+        allowed_tools="Read,Write,Bash"
+        prompt="Fix issues in foundry-lite/src/foundry/config.py and/or foundry-lite/src/foundry/runner.py identified by the verify step.
+
+Read the verify output to identify exactly which checks failed.
+
+Common fixes for config.py:
+- If config uses pydantic or dataclasses for agent config, add: approval_required: bool = False
+- If config uses marshmallow or jsonschema, add approval_required as an optional boolean field
+- If config does strict key validation (unknown keys raise errors), add approval_required to the allowed keys list
+
+Common fixes for runner.py:
+- The approval gate check must be AFTER the auto-explain block. If it is before, move it down.
+- The check must use agent_cfg.get('approval_required') with .get() (not direct key access) so it safely returns None/False when absent
+- When approval_required is True: the code must NOT call fire_agent. A bare 'pass' statement is fine.
+- When approval_required is False or missing: fire_agent must still be called (do not accidentally remove the else branch)
+- The overall structure must be: if on_failure and fail: if approval_required: pass else: fire_agent(...)
+
+After fixing, run:
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/config.py\").read()); print(\"OK\")'
+python -c 'import ast; ast.parse(open(\"foundry-lite/src/foundry/runner.py\").read()); print(\"OK\")'"
+    ]
+
+    commit_changes [
+        label="Commit Changes"
+        shape="box"
+        timeout="120s"
+        allowed_tools="Bash(git:*)"
+        prompt="Stage and commit all changes made by this pipeline.
+1. Run git diff --stat to review what changed
+2. Stage all changed files: git add -A
+3. Commit with this message:
+   feat(foundry): add SQLite run index, auto-explain on failure, and approval gate
+
+   - output.py: add write_run_index, write_next_action, resolve_next_action_for_run with pruning
+   - runner.py: call write_run_index after every run, auto-explain on fail with try/except guard, resolve on pass, approval_required gate before agent fire
+   - explain.py: add extract_next_action using claude-haiku-4-5-20251001
+   - config.py: add approval_required to integrations.agent (default False)"
+    ]
+
+    done [
+        label="Done"
+        shape="Msquare"
+        timeout="120s"
+        prompt="Pipeline complete. All three phases delivered: Phase 2 SQLite run index writer, Phase 3 auto-explain on failure with next_action extraction, Phase 5 approval gate config. foundry.db will be written after every run, failures get auto-explained, and approval_required: true prevents agent auto-fire."
+    ]
+
+    start -> impl_sqlite_index
+    impl_sqlite_index -> verify_sqlite_index
+    verify_sqlite_index -> fixup_sqlite_index [label="FAIL" condition="preferred_label=FAIL"]
+    fixup_sqlite_index -> verify_sqlite_index [loop_restart="true"]
+    verify_sqlite_index -> impl_auto_explain [label="PASS" condition="preferred_label=PASS"]
+    impl_auto_explain -> verify_auto_explain
+    verify_auto_explain -> fixup_auto_explain [label="FAIL" condition="preferred_label=FAIL"]
+    fixup_auto_explain -> verify_auto_explain [loop_restart="true"]
+    verify_auto_explain -> impl_approval_gate [label="PASS" condition="preferred_label=PASS"]
+    impl_approval_gate -> verify_approval_gate
+    verify_approval_gate -> fixup_approval_gate [label="FAIL" condition="preferred_label=FAIL"]
+    fixup_approval_gate -> verify_approval_gate [loop_restart="true"]
+    verify_approval_gate -> commit_changes [label="PASS" condition="preferred_label=PASS"]
+    commit_changes -> done
+}
