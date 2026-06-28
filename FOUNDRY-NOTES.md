@@ -283,7 +283,7 @@ policy:
 ```json
 {
   "version": 1,
-  "repo": "citadelgrad/example",
+  "repo": "your-org/your-repo",
   "commit": "abc123",
   "profile": "full",
   "decision": "continue",

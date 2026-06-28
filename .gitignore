@@ -1,9 +1,15 @@
 
+# Personal dev tooling (not project code)
+.agents/
+.beads/
+.claude/
+.codex/
+foundry-review.html
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
 .beads-credential-key
-.beads/proxieddb/
 CLAUDE.md
 
 # Python
