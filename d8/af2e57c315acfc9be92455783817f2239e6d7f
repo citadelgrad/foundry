@@ -1,0 +1,33 @@
+foundry-lite/src/foundry/output.py
+  s_26dd40211ea699::t_a16bf6ba9d2693 98
+foundry-lite/src/foundry/scheduler.py
+  s_26dd40211ea699::t_2582195ebdb7a9 36-50,88
+CONTEXT.md
+  s_ff0acf018e305a::t_21a88d47161ed1 29-37
+foundry-lite/uv.lock
+  s_26dd40211ea699::t_a051a955b84d7d 315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d8af2e57c315acfc9be92455783817f2239e6d7f",
+  "prompts": {},
+  "sessions": {
+    "s_26dd40211ea699": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1b577adf-cc57-4ed7-89c0-bfc54325075f",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    },
+    "s_ff0acf018e305a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4c3b1036-a192-4b1b-87bd-c21d38b3b242",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
