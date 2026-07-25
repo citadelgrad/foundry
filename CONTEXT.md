@@ -26,3 +26,12 @@ A natural language prompt expressing an Intent directly, without a structured fi
 
 ## Working Clone
 A developer's regular local git checkout of a repository. Distinct from Reckoner's internal bare repo. Used for post-PR branch handoff so the developer can continue work locally without re-pulling from remote.
+
+## Decision
+The outcome of a Profile run: `pass`, `warn`, `fail`, or `needs_human`. Derived from Gate results — any gate outputting the `FOUNDRY_NEEDS_HUMAN` sentinel forces `needs_human` regardless of exit codes. Drives whether Integrations fire.
+
+## Integration
+A configured side effect that fires when a run's Decision is `fail` or `needs_human` (never on `pass`/`warn`). Defined under `integrations` in `foundry.yaml`. Existing: `explain` (LLM writes `explanation.md`), `beads` (creates a Beads Issue), `agent` (dispatches a Claude Code session).
+
+## Decision Point
+A `needs_human` Decision specifically: something an agent cannot resolve on its own and must hand to a person for judgment. Distinct from `fail`, which an agent may be authorized to fix directly. A Decision Point is presented, never auto-resolved.

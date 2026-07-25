@@ -33,6 +33,21 @@ def install_schedule(name: str, config: FoundryConfig, repo_path: str) -> None:
     print(f'Installed schedule "{name}" ({schedule.cron})')
 
 
+def _build_env_xml() -> str:
+    home = str(Path.home())
+    path = f"/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:{home}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    env_vars = {"PATH": path}
+    for key in ("ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
+        val = os.environ.get(key)
+        if val:
+            env_vars[key] = val
+    lines = ["  <key>EnvironmentVariables</key>", "  <dict>"]
+    for k, v in env_vars.items():
+        lines += [f"    <key>{k}</key>", f"    <string>{v}</string>"]
+    lines.append("  </dict>")
+    return "\n".join(lines)
+
+
 def _install_launchd(name, profile, cron, repo_path, foundry_bin):
     parts = cron.strip().split()
     minute, hour, day, month, weekday = parts
@@ -70,6 +85,7 @@ def _install_launchd(name, profile, cron, repo_path, foundry_bin):
     <string>--repo</string>
     <string>{repo_path}</string>
   </array>
+{_build_env_xml()}
   <key>StartCalendarInterval</key>
   <dict>
 {calendar.rstrip()}

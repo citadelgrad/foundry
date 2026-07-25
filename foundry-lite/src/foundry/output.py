@@ -95,7 +95,7 @@ def resolve_next_action_for_run(repo_path: str, profile: str) -> None:
         _ensure_schema(conn)
         conn.execute(
             "UPDATE next_actions SET status = 'resolved', resolved_at = datetime('now')"
-            " WHERE status = 'approved' AND repo_path = ? AND profile = ?",
+            " WHERE status IN ('approved', 'pending_approval') AND repo_path = ? AND profile = ?",
             (repo_path, profile),
         )
 
