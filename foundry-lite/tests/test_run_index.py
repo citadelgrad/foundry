@@ -206,12 +206,12 @@ class TestResolveNextActionForRun:
         row = _query(db, "SELECT resolved_at FROM next_actions WHERE run_id='r1'")[0]
         assert row[0] is not None
 
-    def test_pending_approval_not_resolved(self, db, tmp_path):
+    def test_pending_approval_resolved_on_pass(self, db, tmp_path):
         from foundry.output import resolve_next_action_for_run
         self._seed(db, "r2", "pending_approval")
         resolve_next_action_for_run("/repo", "quick")
         row = _query(db, "SELECT status FROM next_actions WHERE run_id='r2'")[0]
-        assert row[0] == "pending_approval"
+        assert row[0] == "resolved"
 
     def test_dismissed_not_resolved(self, db, tmp_path):
         from foundry.output import resolve_next_action_for_run
@@ -254,6 +254,16 @@ class TestFireIntegrations:
     def _agent_cfg(self, approval_required=False):
         return {"agent": {"on_failure": True, "approval_required": approval_required, "command": "echo {run_dir}"}}
 
+    def _review_cfg(self, on_needs_human=True, review_command="echo review {run_dir}", command="echo {run_dir}"):
+        return {
+            "agent": {
+                "on_failure": True,
+                "command": command,
+                "on_needs_human": on_needs_human,
+                "review_command": review_command,
+            }
+        }
+
     @patch("subprocess.Popen")
     def test_agent_fires_on_fail_without_approval_required(self, popen, tmp_path):
         from foundry.runner import _fire_integrations
@@ -267,16 +277,33 @@ class TestFireIntegrations:
         popen.assert_not_called()
 
     @patch("subprocess.Popen")
-    def test_agent_fires_on_needs_human_even_with_approval_required(self, popen, tmp_path):
-        """approval_required must not block the agent for needs_human decisions."""
+    def test_review_command_fires_on_needs_human_and_not_command(self, popen, tmp_path):
         from foundry.runner import _fire_integrations
-        _fire_integrations(self._agent_cfg(approval_required=True), _result(decision="needs_human"), tmp_path, tmp_path)
+        _fire_integrations(self._review_cfg(), _result(decision="needs_human"), tmp_path, tmp_path)
         popen.assert_called_once()
+        spawned_cmd = popen.call_args.args[0][2]
+        assert "review" in spawned_cmd
+        assert str(tmp_path) in spawned_cmd
+
+    @patch("subprocess.Popen")
+    def test_agent_does_not_fire_on_needs_human_without_review_command(self, popen, tmp_path):
+        """command must never be used as a fallback for needs_human, even if set."""
+        from foundry.runner import _fire_integrations
+        cfg = {"agent": {"on_failure": True, "command": "echo {run_dir}", "on_needs_human": True}}
+        _fire_integrations(cfg, _result(decision="needs_human"), tmp_path, tmp_path)
+        popen.assert_not_called()
+
+    @patch("subprocess.Popen")
+    def test_agent_does_not_fire_on_needs_human_without_on_needs_human_flag(self, popen, tmp_path):
+        from foundry.runner import _fire_integrations
+        cfg = self._review_cfg(on_needs_human=False)
+        _fire_integrations(cfg, _result(decision="needs_human"), tmp_path, tmp_path)
+        popen.assert_not_called()
 
     @patch("subprocess.Popen")
     def test_agent_does_not_fire_on_pass(self, popen, tmp_path):
         from foundry.runner import _fire_integrations
-        _fire_integrations(self._agent_cfg(), _result(decision="pass"), tmp_path, tmp_path)
+        _fire_integrations(self._review_cfg(), _result(decision="pass"), tmp_path, tmp_path)
         popen.assert_not_called()
 
     @patch("subprocess.Popen")
@@ -289,8 +316,15 @@ class TestFireIntegrations:
     @patch("subprocess.Popen")
     def test_agent_does_not_fire_on_warn(self, popen, tmp_path):
         from foundry.runner import _fire_integrations
-        _fire_integrations(self._agent_cfg(), _result(decision="warn"), tmp_path, tmp_path)
+        _fire_integrations(self._review_cfg(), _result(decision="warn"), tmp_path, tmp_path)
         popen.assert_not_called()
+
+    @patch("subprocess.Popen", side_effect=OSError("spawn failed"))
+    def test_review_command_spawn_failure_is_caught_and_logged(self, popen, tmp_path, capsys):
+        from foundry.runner import _fire_integrations
+        _fire_integrations(self._review_cfg(), _result(decision="needs_human"), tmp_path, tmp_path)
+        captured = capsys.readouterr()
+        assert "review agent spawn failed" in captured.err
 
 
 # ---------------------------------------------------------------------------

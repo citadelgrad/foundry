@@ -135,43 +135,73 @@ def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: D
         )
 
     try:
-        proc = subprocess.Popen(
-            shell_cmd,
-            cwd=str(repo_path),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
+        if docker:
+            # ponytail: direct file I/O avoids Docker+PIPE buffer deadlock
+            with log_path.open("wb") as lf:
+                proc = subprocess.Popen(
+                    shell_cmd, cwd=str(repo_path),
+                    stdout=lf, stderr=subprocess.STDOUT,
+                )
+                try:
+                    proc.wait(timeout=timeout_secs)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                    finished = datetime.now(timezone.utc)
+                    print(f"[foundry] gate {gate_id} → timed_out ({gate.timeout})", file=sys.stderr)
+                    return _result("timed_out", None, finished)
+            exit_code = proc.returncode
+            raw = log_path.read_bytes()
+            if len(raw) > LOG_SIZE_CAP:
+                log_truncated = True
+                log_path.write_bytes(raw[:LOG_SIZE_CAP])
+            log_content = raw[:LOG_SIZE_CAP].decode(errors="replace")
+        else:
+            proc = subprocess.Popen(
+                shell_cmd,
+                cwd=str(repo_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
 
-        def _reader():
-            nonlocal log_truncated
-            for chunk in iter(lambda: proc.stdout.read(4096), b""):
-                sys.stderr.buffer.write(chunk)
-                sys.stderr.buffer.flush()
-                remaining = LOG_SIZE_CAP - len(log_bytes)
-                if remaining > 0:
-                    log_bytes.extend(chunk[:remaining])
-                    if len(log_bytes) >= LOG_SIZE_CAP:
-                        log_truncated = True
+            def _reader():
+                nonlocal log_truncated
+                for chunk in iter(lambda: proc.stdout.read(4096), b""):
+                    sys.stderr.buffer.write(chunk)
+                    sys.stderr.buffer.flush()
+                    remaining = LOG_SIZE_CAP - len(log_bytes)
+                    if remaining > 0:
+                        log_bytes.extend(chunk[:remaining])
+                        if len(log_bytes) >= LOG_SIZE_CAP:
+                            log_truncated = True
 
-        t = threading.Thread(target=_reader, daemon=True)
-        t.start()
+            t = threading.Thread(target=_reader, daemon=True)
+            t.start()
 
-        try:
-            proc.wait(timeout=timeout_secs)
-            t.join()
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            t.join(timeout=2)
+            try:
+                proc.wait(timeout=timeout_secs)
+                t.join()
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                t.join(timeout=2)
+                log_path.write_bytes(bytes(log_bytes))
+                finished = datetime.now(timezone.utc)
+                print(f"[foundry] gate {gate_id} → timed_out ({gate.timeout})", file=sys.stderr)
+                return _result("timed_out", None, finished)
+
+            exit_code = proc.returncode
             log_path.write_bytes(bytes(log_bytes))
-            finished = datetime.now(timezone.utc)
-            print(f"[foundry] gate {gate_id} → timed_out ({gate.timeout})", file=sys.stderr)
-            return _result("timed_out", None, finished)
+            log_content = log_bytes.decode(errors="replace")
 
-        exit_code = proc.returncode
-        log_path.write_bytes(bytes(log_bytes))
-
-        log_content = log_bytes.decode(errors="replace")
         if "FOUNDRY_NEEDS_HUMAN" in log_content:
             status = "needs_human"
         elif exit_code == 0:
@@ -267,14 +297,16 @@ def run_profile(
     write_evidence(run_dir, result_dict)
     write_run_index(run_dir, result_dict)
     if result_dict["decision"] == "fail":
+        explain_cfg = (integrations_cfg or {}).get("explain", {})
+        model = explain_cfg.get("model", "claude-haiku-4-5-20251001")
+        explanation = ""
+        next_action = ""
         try:
-            explain_cfg = (integrations_cfg or {}).get("explain", {})
-            model = explain_cfg.get("model", "claude-haiku-4-5-20251001")
             explanation = explain_run(run_dir, model)
             next_action = extract_next_action(explanation)
-            write_next_action(run_dir, result_dict, explanation, next_action)
         except Exception as e:
             print(f"[foundry] auto-explain failed: {e}", file=sys.stderr)
+        write_next_action(run_dir, result_dict, explanation, next_action)
     if result_dict["decision"] == "pass":
         resolve_next_action_for_run(result_dict["repo"]["path"], result_dict["profile"])
     _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path)
@@ -307,8 +339,8 @@ def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo
     maybe_create_beads_issue(integrations_cfg, result, run_dir, explanation)
 
     agent_cfg = integrations_cfg.get("agent", {})
-    if agent_cfg and agent_cfg.get("on_failure"):
-        if decision == "fail" and agent_cfg.get("approval_required"):
+    if decision == "fail" and agent_cfg and agent_cfg.get("on_failure"):
+        if agent_cfg.get("approval_required"):
             pass  # next_action already written; agent blocked pending approval
         else:
             cmd_template = agent_cfg.get("command", "claude --print 'Foundry run failed. See {run_dir}/result.json'")
@@ -318,6 +350,17 @@ def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo
                 print(f"[foundry] agent spawned: {cmd}", file=sys.stderr)
             except Exception as e:
                 print(f"[foundry] agent spawn failed: {e}", file=sys.stderr)
+    elif decision == "needs_human" and agent_cfg and agent_cfg.get("on_needs_human"):
+        # needs_human is a Decision Point an agent can't resolve on its own — only
+        # a review-only command may fire here, never the fix-and-continue `command`.
+        review_cmd_template = agent_cfg.get("review_command")
+        if review_cmd_template:
+            review_cmd = review_cmd_template.format(run_dir=run_dir)
+            try:
+                subprocess.Popen(["sh", "-c", review_cmd], cwd=str(repo_path), start_new_session=True)
+                print(f"[foundry] review agent spawned: {review_cmd}", file=sys.stderr)
+            except Exception as e:
+                print(f"[foundry] review agent spawn failed: {e}", file=sys.stderr)
 
 
 def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path, explanation: str | None = None) -> None:
