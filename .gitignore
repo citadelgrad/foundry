@@ -21,6 +21,10 @@ __pycache__/
 # Pipeline artifacts
 .pas/
 
+# Foundry runtime state (run history lives under .foundry/runs/, ignored by
+# .foundry/.gitignore; this covers the gate lock file at the repo root)
+.beads.gate.lock
+
 # TLDR analysis cache
 .tldr/
 .tldrignore

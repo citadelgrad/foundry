@@ -71,7 +71,7 @@ Add a `docker:` block to a profile to run all its `run:` gates inside a containe
 profiles:
   security:
     docker:
-      image: ghcr.io/citadelgrad/foundry-runner:latest
+      image: foundry-runner:local
       volumes:
         - ~/.claude:/home/node/.claude:ro   # subscription credentials, read-only
     gates:
@@ -87,7 +87,7 @@ profiles:
 
 Gate-level `docker:` overrides the profile default for that gate only.
 
-The `foundry-runner` image (`ghcr.io/citadelgrad/foundry-runner:latest`) ships with `claude-code` and `ubs`/`tru` pre-installed. Auth is handled via the `~/.claude` volume mount — no API keys required.
+Build `foundry-runner:local` with `make docker-build` from `foundry-lite/`. It ships with `claude-code` and `ubs`/`tru` pre-installed. Auth is handled via the `~/.claude` volume mount — no API keys required, and the image is not published to a registry.
 
 ## CLI reference
 

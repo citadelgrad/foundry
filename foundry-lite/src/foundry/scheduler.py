@@ -1,5 +1,4 @@
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -56,10 +55,6 @@ def _build_env_xml() -> str:
     home = str(Path.home())
     path = f"/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:{home}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     env_vars = {"PATH": path}
-    for key in ("ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
-        val = os.environ.get(key)
-        if val:
-            env_vars[key] = val
     lines = ["  <key>EnvironmentVariables</key>", "  <dict>"]
     for k, v in env_vars.items():
         lines += [f"    <key>{k}</key>", f"    <string>{v}</string>"]

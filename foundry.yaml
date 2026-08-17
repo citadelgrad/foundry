@@ -3,7 +3,7 @@ version: 1
 profiles:
   security:
     docker:
-      image: ghcr.io/citadelgrad/foundry-runner:latest
+      image: foundry-runner:local
       volumes:
         - ~/.claude:/home/node/.claude:ro
     gates:
@@ -18,7 +18,20 @@ profiles:
         allow_failure: true
         decision_on_failure: warn
 
+  triage:
+    parallel: false
+    gates:
+      - id: ruff
+        run: cd foundry-lite && uv run ruff check .
+        timeout: 5m
+      - id: test
+        run: cd foundry-lite && uv run pytest
+        timeout: 10m
+
 schedules:
   weekly-security-foundry:
     profile: security
     cron: "0 4 * * 0"
+  triage-foundry:
+    profile: triage
+    cron: '0 10 * * 2'
