@@ -9,6 +9,7 @@ from pathlib import Path
 from croniter import CroniterBadCronError, croniter
 
 from foundry.config import FoundryConfig
+from foundry.global_config import list_repos
 
 SCHEDULE_REGISTRY = Path.home() / ".foundry_schedules.json"
 
@@ -31,6 +32,24 @@ def install_schedule(name: str, config: FoundryConfig, repo_path: str) -> None:
 
     _save_registry(name, schedule.profile, schedule.cron, repo_path)
     print(f'Installed schedule "{name}" ({schedule.cron})')
+    _warn_if_daemon_polls_repo(repo_path, name)
+
+
+def _warn_if_daemon_polls_repo(repo_path: str, name: str) -> None:
+    """Advisory-only, non-blocking: warn if `repo_path` is also registered
+    for `foundry daemon` polling, since the daemon fires a repo's
+    foundry.yaml schedules directly and would run schedule `name` a
+    second time. Never raises — a failure here must not fail the install."""
+    try:
+        daemon_paths = {str(Path(r["path"]).resolve()) for r in list_repos()}
+    except Exception:
+        return
+    if str(Path(repo_path).resolve()) in daemon_paths:
+        print(
+            f'warning: repo "{repo_path}" is also registered for daemon polling '
+            f'(foundry daemon start) — schedule "{name}" may fire twice',
+            file=sys.stderr,
+        )
 
 
 def _build_env_xml() -> str:
