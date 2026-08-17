@@ -1,0 +1,24 @@
+foundry-lite/src/foundry/runner.py
+  s_c995f0c656569f::t_7b2228df4d84b9 295-296
+foundry-lite/tests/test_run_index.py
+  s_c995f0c656569f::t_a703c73fd0d0a1 33,109
+  s_c995f0c656569f::t_05a79cc7a511c4 50,56,62,69,81,88,95,103,112,117,124,137,145,154,163,172,186,196,203,210,217,224,234,245,339,353,359,373,387
+foundry-lite/src/foundry/run_index.py
+  s_c995f0c656569f::t_e7119091d4b47b 1-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "cee33e1a388165132840e65e4f5ce5291a003aef",
+  "prompts": {},
+  "sessions": {
+    "s_c995f0c656569f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f122f13c-b96c-4c30-bb0c-b88bd755d564",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
