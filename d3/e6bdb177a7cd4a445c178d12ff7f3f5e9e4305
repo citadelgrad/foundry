@@ -1,0 +1,21 @@
+foundry-lite/src/foundry/runner.py
+  s_c995f0c656569f::t_690fc275132662 113-117,122
+foundry-lite/tests/test_dagger_gate.py
+  s_c995f0c656569f::t_0583b5cb7255d6 1-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d3e6bdb177a7cd4a445c178d12ff7f3f5e9e4305",
+  "prompts": {},
+  "sessions": {
+    "s_c995f0c656569f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f122f13c-b96c-4c30-bb0c-b88bd755d564",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
