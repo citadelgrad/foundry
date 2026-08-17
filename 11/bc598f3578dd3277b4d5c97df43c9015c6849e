@@ -1,0 +1,19 @@
+foundry-lite/uv.lock
+  s_d2135d04a69c01::t_0fdb294f4c1cf1 4-7,15,17,19,24,36,38,43,49,51,56,58,60,65,70-158,163-305,319,324,326,331,336-382,434,440,442,452,466,468,528-609,614,616,618,632,634,636,913,915,917,922,927,929,970-1064
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "11bc598f3578dd3277b4d5c97df43c9015c6849e",
+  "prompts": {},
+  "sessions": {
+    "s_d2135d04a69c01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fe0dbbb5-ac62-456c-9571-ce5107ee3833",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
