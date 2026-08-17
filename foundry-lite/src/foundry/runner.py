@@ -98,9 +98,6 @@ def get_git_info(repo_path: str) -> dict:
 
 
 def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: DockerConfig | None = None) -> GateResult:
-    if gate.dagger:
-        from foundry.dagger_runner import run_dagger_gate
-        return run_dagger_gate(gate, log_dir, repo_path)
     gate_id = gate.id
     runner_type, cmd = _detect_runner(gate)
     timeout_secs = parse_timeout(gate.timeout)
@@ -113,11 +110,16 @@ def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: D
     # For shell gates, pass original run string to sh -c rather than splitting cmd
     if runner_type == "shell":
         shell_cmd = ["sh", "-c", gate.run]
+    elif runner_type == "dagger":
+        # Build the argv list directly rather than splitting cmd, since dagger
+        # args may contain spaces.
+        d = gate.dagger
+        shell_cmd = ["dagger", "call", "-m", d.module, d.function] + (d.args or [])
     else:
         shell_cmd = cmd.split()
 
     docker = _resolve_docker(gate, profile_docker)
-    if docker and runner_type != "act":  # act manages its own containers
+    if docker and runner_type not in ("act", "dagger"):  # act and dagger manage their own containers
         shell_cmd = _wrap_docker(shell_cmd, docker, repo_path)
 
     status = "failed"
