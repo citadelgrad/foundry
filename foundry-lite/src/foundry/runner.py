@@ -292,7 +292,8 @@ def run_profile(
         dirty=gi.get("dirty", False),
         gates=gate_results,
     )
-    from foundry.output import write_evidence, write_result_json, write_summary_md, write_run_index, write_next_action, resolve_next_action_for_run
+    from foundry.output import write_evidence, write_result_json, write_summary_md
+    from foundry.run_index import write_run_index, write_next_action, resolve_next_action_for_run
     from foundry.explain import explain_run, extract_next_action
     result_dict = write_result_json(run_result_obj, run_dir)
     write_summary_md(run_result_obj, run_dir)

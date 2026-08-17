@@ -30,7 +30,7 @@ def _gate(id_, status):
 @pytest.fixture(autouse=False)
 def db(tmp_path, monkeypatch):
     """Redirect FOUNDRY_DB to a temp file; return the Path."""
-    import foundry.output as mod
+    import foundry.run_index as mod
     db_path = tmp_path / "foundry.db"
     monkeypatch.setattr(mod, "FOUNDRY_DB", db_path)
     return db_path
@@ -47,26 +47,26 @@ def _query(db_path, sql, *params):
 
 class TestWriteRunIndex:
     def test_row_appears(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         write_run_index(tmp_path, _result())
         rows = _query(db, "SELECT run_id FROM runs")
         assert rows == [("run-1",)]
 
     def test_decision_stored(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         write_run_index(tmp_path, _result(decision="fail"))
         row = _query(db, "SELECT decision FROM runs WHERE run_id='run-1'")[0]
         assert row[0] == "fail"
 
     def test_gate_count(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         gates = [_gate("lint", "passed"), _gate("test", "failed"), _gate("type", "passed")]
         write_run_index(tmp_path, _result(gates=gates))
         row = _query(db, "SELECT gate_count FROM runs WHERE run_id='run-1'")[0]
         assert row[0] == 3
 
     def test_failed_gates_only_failed_and_timed_out(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         gates = [
             _gate("lint", "failed"),
             _gate("test", "passed"),
@@ -78,21 +78,21 @@ class TestWriteRunIndex:
         assert set(json.loads(raw)) == {"lint", "type"}
 
     def test_passed_gate_not_in_failed_list(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         gates = [_gate("lint", "passed")]
         write_run_index(tmp_path, _result(gates=gates))
         raw = _query(db, "SELECT failed_gates FROM runs WHERE run_id='run-1'")[0][0]
         assert json.loads(raw) == []
 
     def test_needs_human_gate_not_in_failed_list(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         gates = [_gate("review", "needs_human")]
         write_run_index(tmp_path, _result(gates=gates))
         raw = _query(db, "SELECT failed_gates FROM runs WHERE run_id='run-1'")[0][0]
         assert json.loads(raw) == []
 
     def test_upsert_overwrites_on_duplicate_run_id(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         write_run_index(tmp_path, _result(decision="fail"))
         write_run_index(tmp_path, _result(decision="pass"))
         rows = _query(db, "SELECT decision FROM runs WHERE run_id='run-1'")
@@ -100,28 +100,28 @@ class TestWriteRunIndex:
         assert rows[0][0] == "pass"
 
     def test_result_path_stored(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         write_run_index(tmp_path, _result())
         row = _query(db, "SELECT result_path FROM runs WHERE run_id='run-1'")[0]
         assert row[0] == str(tmp_path / "result.json")
 
     def test_creates_parent_dir(self, tmp_path, monkeypatch):
-        import foundry.output as mod
+        import foundry.run_index as mod
         db_path = tmp_path / "subdir" / "foundry.db"
         monkeypatch.setattr(mod, "FOUNDRY_DB", db_path)
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         write_run_index(tmp_path, _result())  # must not raise
         assert db_path.exists()
 
     def test_timed_out_gate_in_failed_gates_column(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         gates = [_gate("ci", "timed_out"), _gate("lint", "passed")]
         write_run_index(tmp_path, _result(gates=gates))
         raw = _query(db, "SELECT failed_gates FROM runs WHERE run_id='run-1'")[0][0]
         assert json.loads(raw) == ["ci"]
 
     def test_needs_human_gate_excluded_from_failed_gates_column(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         gates = [_gate("review", "needs_human"), _gate("lint", "failed")]
         write_run_index(tmp_path, _result(gates=gates))
         raw = _query(db, "SELECT failed_gates FROM runs WHERE run_id='run-1'")[0][0]
@@ -134,7 +134,7 @@ class TestWriteRunIndex:
 
 class TestWriteNextAction:
     def test_status_is_pending_approval(self, db, tmp_path):
-        from foundry.output import write_run_index, write_next_action
+        from foundry.run_index import write_run_index, write_next_action
         r = _result(decision="fail")
         write_run_index(tmp_path, r)
         write_next_action(tmp_path, r, "lint broke", "Fix the lint errors")
@@ -142,7 +142,7 @@ class TestWriteNextAction:
         assert row[0] == "pending_approval"
 
     def test_explanation_and_next_action_stored(self, db, tmp_path):
-        from foundry.output import write_run_index, write_next_action
+        from foundry.run_index import write_run_index, write_next_action
         r = _result(decision="fail")
         write_run_index(tmp_path, r)
         write_next_action(tmp_path, r, "Type errors in foo.py", "Add missing type annotations")
@@ -151,7 +151,7 @@ class TestWriteNextAction:
         assert row[1] == "Add missing type annotations"
 
     def test_failed_gate_ids_includes_timed_out(self, db, tmp_path):
-        from foundry.output import write_run_index, write_next_action
+        from foundry.run_index import write_run_index, write_next_action
         gates = [_gate("test", "timed_out")]
         r = _result(decision="fail", gates=gates)
         write_run_index(tmp_path, r)
@@ -160,7 +160,7 @@ class TestWriteNextAction:
         assert json.loads(raw) == ["test"]
 
     def test_failed_gate_ids_excludes_passed(self, db, tmp_path):
-        from foundry.output import write_run_index, write_next_action
+        from foundry.run_index import write_run_index, write_next_action
         gates = [_gate("lint", "failed"), _gate("test", "passed")]
         r = _result(decision="fail", gates=gates)
         write_run_index(tmp_path, r)
@@ -169,7 +169,7 @@ class TestWriteNextAction:
         assert json.loads(raw) == ["lint"]
 
     def test_status_not_approved_by_default(self, db, tmp_path):
-        from foundry.output import write_run_index, write_next_action
+        from foundry.run_index import write_run_index, write_next_action
         r = _result(decision="fail")
         write_run_index(tmp_path, r)
         write_next_action(tmp_path, r, "x", "y")
@@ -183,7 +183,7 @@ class TestWriteNextAction:
 
 class TestResolveNextActionForRun:
     def _seed(self, db_path, run_id, status, repo="/repo", profile="quick"):
-        from foundry.output import _ensure_schema
+        from foundry.run_index import _ensure_schema
         with sqlite3.connect(str(db_path)) as conn:
             _ensure_schema(conn)
             conn.execute(
@@ -193,35 +193,35 @@ class TestResolveNextActionForRun:
             )
 
     def test_approved_becomes_resolved(self, db, tmp_path):
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         self._seed(db, "r1", "approved")
         resolve_next_action_for_run("/repo", "quick")
         row = _query(db, "SELECT status FROM next_actions WHERE run_id='r1'")[0]
         assert row[0] == "resolved"
 
     def test_resolved_at_is_set(self, db, tmp_path):
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         self._seed(db, "r1", "approved")
         resolve_next_action_for_run("/repo", "quick")
         row = _query(db, "SELECT resolved_at FROM next_actions WHERE run_id='r1'")[0]
         assert row[0] is not None
 
     def test_pending_approval_resolved_on_pass(self, db, tmp_path):
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         self._seed(db, "r2", "pending_approval")
         resolve_next_action_for_run("/repo", "quick")
         row = _query(db, "SELECT status FROM next_actions WHERE run_id='r2'")[0]
         assert row[0] == "resolved"
 
     def test_dismissed_not_resolved(self, db, tmp_path):
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         self._seed(db, "r3", "dismissed")
         resolve_next_action_for_run("/repo", "quick")
         row = _query(db, "SELECT status FROM next_actions WHERE run_id='r3'")[0]
         assert row[0] == "dismissed"
 
     def test_different_profile_not_resolved(self, db, tmp_path):
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         self._seed(db, "r4", "approved", profile="quick")
         self._seed(db, "r5", "approved", profile="full")
         resolve_next_action_for_run("/repo", "quick")
@@ -231,7 +231,7 @@ class TestResolveNextActionForRun:
         assert r5 == "approved"
 
     def test_different_repo_not_resolved(self, db, tmp_path):
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         self._seed(db, "r6", "approved", repo="/repo-a")
         self._seed(db, "r7", "approved", repo="/repo-b")
         resolve_next_action_for_run("/repo-a", "quick")
@@ -242,7 +242,7 @@ class TestResolveNextActionForRun:
 
     def test_fresh_db_does_not_crash(self, db):
         """First-ever pass run must not crash even with no prior writes."""
-        from foundry.output import resolve_next_action_for_run
+        from foundry.run_index import resolve_next_action_for_run
         resolve_next_action_for_run("/repo", "quick")  # must not raise
 
 
@@ -336,7 +336,7 @@ class TestPruning:
         return sqlite3.connect(str(db_path))
 
     def test_runs_older_than_90_days_are_pruned(self, db):
-        from foundry.output import _ensure_schema
+        from foundry.run_index import _ensure_schema
         with self._conn(db) as conn:
             _ensure_schema(conn)
             conn.execute(
@@ -350,13 +350,13 @@ class TestPruning:
         assert rows == []
 
     def test_recent_run_not_pruned(self, db, tmp_path):
-        from foundry.output import write_run_index
+        from foundry.run_index import write_run_index
         write_run_index(tmp_path, _result())
         rows = _query(db, "SELECT run_id FROM runs")
         assert rows == [("run-1",)]
 
     def test_non_resolved_next_action_not_pruned_despite_age(self, db):
-        from foundry.output import _ensure_schema
+        from foundry.run_index import _ensure_schema
         with self._conn(db) as conn:
             _ensure_schema(conn)
             conn.execute(
@@ -370,7 +370,7 @@ class TestPruning:
         assert row[0][0] == "pending_approval"  # old but not resolved — must survive
 
     def test_run_at_45_days_old_not_pruned(self, db):
-        from foundry.output import _ensure_schema
+        from foundry.run_index import _ensure_schema
         with self._conn(db) as conn:
             _ensure_schema(conn)
             conn.execute(
@@ -384,7 +384,7 @@ class TestPruning:
         assert rows == [("mid",)]
 
     def test_resolved_next_action_pruned_old_pending_survives(self, db):
-        from foundry.output import _ensure_schema
+        from foundry.run_index import _ensure_schema
         with self._conn(db) as conn:
             _ensure_schema(conn)
             conn.execute(
