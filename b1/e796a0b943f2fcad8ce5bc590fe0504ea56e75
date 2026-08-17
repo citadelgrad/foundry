@@ -1,0 +1,19 @@
+docs/foundry-current-state.html
+  s_d2135d04a69c01::t_951b20845ae2d2 1-392
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b1e796a0b943f2fcad8ce5bc590fe0504ea56e75",
+  "prompts": {},
+  "sessions": {
+    "s_d2135d04a69c01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fe0dbbb5-ac62-456c-9571-ce5107ee3833",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
