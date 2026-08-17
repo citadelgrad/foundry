@@ -6,10 +6,24 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from foundry.config import DockerConfig, FoundryConfig, GateConfig, ProfileConfig, parse_timeout
+from foundry.config import (
+    RUN_TOOL_PREFIXES,
+    DockerConfig,
+    FoundryConfig,
+    GateConfig,
+    ProfileConfig,
+    classify_gate,
+    parse_timeout,
+)
 
 
 LOG_SIZE_CAP = 512 * 1024  # 512KB
+
+# Sole default model for foundry.explain.explain_run when
+# integrations.explain.model is not set in foundry.yaml — shared by the
+# always-on next_actions explanation and the optional explanation.md/beads
+# integration output, so both use the same default absent explicit config.
+DEFAULT_EXPLAIN_MODEL = "claude-haiku-4-5-20251001"
 
 
 @dataclass
@@ -44,21 +58,17 @@ class RunResult:
 
 
 def detect_runner(run_cmd: str) -> tuple[str, str]:
-    if run_cmd.startswith("make "):
-        return "make", run_cmd
-    if run_cmd.startswith("just "):
-        return "just", run_cmd
-    if run_cmd.startswith("task "):
-        return "task", run_cmd
-    if run_cmd.startswith("mise run "):
-        return "mise", run_cmd
+    for prefix, tool in RUN_TOOL_PREFIXES.items():
+        if run_cmd.startswith(prefix):
+            return tool, run_cmd
     return "shell", f'sh -c "{run_cmd}"'
 
 
 def _detect_runner(gate: GateConfig) -> tuple[str, str]:
-    if gate.act:
+    kind = classify_gate(gate)
+    if kind == "act":
         return "act", f"act {gate.act.event} -W {gate.act.workflow}"
-    if gate.dagger:
+    if kind == "dagger":
         d = gate.dagger
         cmd = ["dagger", "call", "-m", d.module, d.function] + (d.args or [])
         return "dagger", " ".join(cmd)
@@ -98,9 +108,6 @@ def get_git_info(repo_path: str) -> dict:
 
 
 def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: DockerConfig | None = None) -> GateResult:
-    if gate.dagger:
-        from foundry.dagger_runner import run_dagger_gate
-        return run_dagger_gate(gate, log_dir, repo_path)
     gate_id = gate.id
     runner_type, cmd = _detect_runner(gate)
     timeout_secs = parse_timeout(gate.timeout)
@@ -113,11 +120,16 @@ def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: D
     # For shell gates, pass original run string to sh -c rather than splitting cmd
     if runner_type == "shell":
         shell_cmd = ["sh", "-c", gate.run]
+    elif runner_type == "dagger":
+        # Build the argv list directly rather than splitting cmd, since dagger
+        # args may contain spaces.
+        d = gate.dagger
+        shell_cmd = ["dagger", "call", "-m", d.module, d.function] + (d.args or [])
     else:
         shell_cmd = cmd.split()
 
     docker = _resolve_docker(gate, profile_docker)
-    if docker and runner_type != "act":  # act manages its own containers
+    if docker and runner_type not in ("act", "dagger"):  # act and dagger manage their own containers
         shell_cmd = _wrap_docker(shell_cmd, docker, repo_path)
 
     status = "failed"
@@ -135,43 +147,73 @@ def run_gate(gate: GateConfig, log_dir: Path, repo_path: Path, profile_docker: D
         )
 
     try:
-        proc = subprocess.Popen(
-            shell_cmd,
-            cwd=str(repo_path),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
+        if docker:
+            # ponytail: direct file I/O avoids Docker+PIPE buffer deadlock
+            with log_path.open("wb") as lf:
+                proc = subprocess.Popen(
+                    shell_cmd, cwd=str(repo_path),
+                    stdout=lf, stderr=subprocess.STDOUT,
+                )
+                try:
+                    proc.wait(timeout=timeout_secs)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                    finished = datetime.now(timezone.utc)
+                    print(f"[foundry] gate {gate_id} → timed_out ({gate.timeout})", file=sys.stderr)
+                    return _result("timed_out", None, finished)
+            exit_code = proc.returncode
+            raw = log_path.read_bytes()
+            if len(raw) > LOG_SIZE_CAP:
+                log_truncated = True
+                log_path.write_bytes(raw[:LOG_SIZE_CAP])
+            log_content = raw[:LOG_SIZE_CAP].decode(errors="replace")
+        else:
+            proc = subprocess.Popen(
+                shell_cmd,
+                cwd=str(repo_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
 
-        def _reader():
-            nonlocal log_truncated
-            for chunk in iter(lambda: proc.stdout.read(4096), b""):
-                sys.stderr.buffer.write(chunk)
-                sys.stderr.buffer.flush()
-                remaining = LOG_SIZE_CAP - len(log_bytes)
-                if remaining > 0:
-                    log_bytes.extend(chunk[:remaining])
-                    if len(log_bytes) >= LOG_SIZE_CAP:
-                        log_truncated = True
+            def _reader():
+                nonlocal log_truncated
+                for chunk in iter(lambda: proc.stdout.read(4096), b""):
+                    sys.stderr.buffer.write(chunk)
+                    sys.stderr.buffer.flush()
+                    remaining = LOG_SIZE_CAP - len(log_bytes)
+                    if remaining > 0:
+                        log_bytes.extend(chunk[:remaining])
+                        if len(log_bytes) >= LOG_SIZE_CAP:
+                            log_truncated = True
 
-        t = threading.Thread(target=_reader, daemon=True)
-        t.start()
+            t = threading.Thread(target=_reader, daemon=True)
+            t.start()
 
-        try:
-            proc.wait(timeout=timeout_secs)
-            t.join()
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            t.join(timeout=2)
+            try:
+                proc.wait(timeout=timeout_secs)
+                t.join()
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                t.join(timeout=2)
+                log_path.write_bytes(bytes(log_bytes))
+                finished = datetime.now(timezone.utc)
+                print(f"[foundry] gate {gate_id} → timed_out ({gate.timeout})", file=sys.stderr)
+                return _result("timed_out", None, finished)
+
+            exit_code = proc.returncode
             log_path.write_bytes(bytes(log_bytes))
-            finished = datetime.now(timezone.utc)
-            print(f"[foundry] gate {gate_id} → timed_out ({gate.timeout})", file=sys.stderr)
-            return _result("timed_out", None, finished)
+            log_content = log_bytes.decode(errors="replace")
 
-        exit_code = proc.returncode
-        log_path.write_bytes(bytes(log_bytes))
-
-        log_content = log_bytes.decode(errors="replace")
         if "FOUNDRY_NEEDS_HUMAN" in log_content:
             status = "needs_human"
         elif exit_code == 0:
@@ -260,55 +302,114 @@ def run_profile(
         dirty=gi.get("dirty", False),
         gates=gate_results,
     )
-    from foundry.output import write_evidence, write_result_json, write_summary_md, write_run_index, write_next_action, resolve_next_action_for_run
+    from foundry.output import write_evidence, write_result_json, write_summary_md
+    from foundry.run_index import write_run_index, write_next_action, resolve_next_action_for_run
     from foundry.explain import explain_run, extract_next_action
     result_dict = write_result_json(run_result_obj, run_dir)
     write_summary_md(run_result_obj, run_dir)
     write_evidence(run_dir, result_dict)
     write_run_index(run_dir, result_dict)
+    explanation = None
     if result_dict["decision"] == "fail":
+        explain_cfg = (integrations_cfg or {}).get("explain", {})
+        model = explain_cfg.get("model", DEFAULT_EXPLAIN_MODEL)
+        explanation = ""
+        next_action = ""
         try:
-            explain_cfg = (integrations_cfg or {}).get("explain", {})
-            model = explain_cfg.get("model", "claude-haiku-4-5-20251001")
             explanation = explain_run(run_dir, model)
             next_action = extract_next_action(explanation)
-            write_next_action(run_dir, result_dict, explanation, next_action)
         except Exception as e:
             print(f"[foundry] auto-explain failed: {e}", file=sys.stderr)
+        write_next_action(run_dir, result_dict, explanation, next_action)
     if result_dict["decision"] == "pass":
         resolve_next_action_for_run(result_dict["repo"]["path"], result_dict["profile"])
-    _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path)
+    _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path, explanation=explanation)
     return result_dict
 
 
-def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo_path: Path) -> None:
+class ProfileNotFoundError(ValueError):
+    def __init__(self, profile_name: str, available: list[str]):
+        self.profile_name = profile_name
+        self.available = available
+        super().__init__(f"profile '{profile_name}' not found")
+
+
+def prepare_and_run_profile(profile_name: str, repo_path: Path) -> dict:
+    """Load foundry.yaml, set up a run directory, and execute profile_name against repo_path.
+
+    Single seam for the "prepare and run a Profile" flow shared by `foundry run`
+    and `foundry run --watch`, so both build run_id/run_dir/git_info the same way
+    and invoke run_profile identically.
+
+    Raises FileNotFoundError / ValueError from config loading, and
+    ProfileNotFoundError (a ValueError) if profile_name isn't defined in foundry.yaml.
+    """
+    from foundry.config import load_config
+    from foundry.output import update_latest_symlink, write_gitignore_if_missing, write_metadata_json
+
+    cfg = load_config(str(repo_path / "foundry.yaml"))
+    if profile_name not in cfg.profiles:
+        raise ProfileNotFoundError(profile_name, list(cfg.profiles))
+    profile = cfg.profiles[profile_name]
+
+    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    foundry_dir = repo_path / ".foundry"
+    run_dir = foundry_dir / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_gitignore_if_missing(foundry_dir)
+
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    git = get_git_info(str(repo_path))
+    result = run_profile(
+        profile, profile_name, run_dir, repo_path,
+        integrations_cfg=cfg.integrations,
+        run_id=run_id,
+        git_info=git,
+        started_at=started_at,
+    )
+    write_metadata_json(run_dir)
+    update_latest_symlink(run_dir)
+    return result
+
+
+def _fire_integrations(
+    integrations_cfg: dict, result: dict, run_dir: Path, repo_path: Path, explanation: str | None = None,
+) -> None:
+    """Fire configured integrations for a fail/needs_human Decision.
+
+    `explanation`, when not None, is the explanation run_profile already
+    computed once for a fail Decision's next_actions record — reused here so
+    a single fail Decision with explain configured triggers exactly one
+    explain_run call, not two. For needs_human (run_profile never computes
+    an explanation), this function still computes its own, as before.
+    """
     decision = result["decision"]
     is_failure = decision in ("fail", "needs_human")
     if not is_failure:
         return
 
-    explanation: str | None = None
-
     explain_cfg = integrations_cfg.get("explain", {})
     if explain_cfg and explain_cfg.get("on_failure"):
-        import os
-        from foundry.explain import explain_run, required_env_key
-        model = explain_cfg.get("model", "gemini-3.5-flash")
-        if os.environ.get(required_env_key(model)):
-            try:
-                explanation = explain_run(run_dir, model)
-                (run_dir / "explanation.md").write_text(explanation)
-                print(explanation, file=sys.stderr)
-            except Exception as e:
-                print(f"[foundry] explain failed: {e}", file=sys.stderr)
-        else:
-            print(f"[foundry] explain skipped: {required_env_key(model)} not set", file=sys.stderr)
+        if explanation is None:
+            import os
+            from foundry.explain import explain_run, required_env_key
+            model = explain_cfg.get("model", DEFAULT_EXPLAIN_MODEL)
+            if os.environ.get(required_env_key(model)):
+                try:
+                    explanation = explain_run(run_dir, model)
+                except Exception as e:
+                    print(f"[foundry] explain failed: {e}", file=sys.stderr)
+            else:
+                print(f"[foundry] explain skipped: {required_env_key(model)} not set", file=sys.stderr)
+        if explanation:
+            (run_dir / "explanation.md").write_text(explanation)
+            print(explanation, file=sys.stderr)
 
     maybe_create_beads_issue(integrations_cfg, result, run_dir, explanation)
 
     agent_cfg = integrations_cfg.get("agent", {})
-    if agent_cfg and agent_cfg.get("on_failure"):
-        if decision == "fail" and agent_cfg.get("approval_required"):
+    if decision == "fail" and agent_cfg and agent_cfg.get("on_failure"):
+        if agent_cfg.get("approval_required"):
             pass  # next_action already written; agent blocked pending approval
         else:
             cmd_template = agent_cfg.get("command", "claude --print 'Foundry run failed. See {run_dir}/result.json'")
@@ -318,6 +419,17 @@ def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo
                 print(f"[foundry] agent spawned: {cmd}", file=sys.stderr)
             except Exception as e:
                 print(f"[foundry] agent spawn failed: {e}", file=sys.stderr)
+    elif decision == "needs_human" and agent_cfg and agent_cfg.get("on_needs_human"):
+        # needs_human is a Decision Point an agent can't resolve on its own — only
+        # a review-only command may fire here, never the fix-and-continue `command`.
+        review_cmd_template = agent_cfg.get("review_command")
+        if review_cmd_template:
+            review_cmd = review_cmd_template.format(run_dir=run_dir)
+            try:
+                subprocess.Popen(["sh", "-c", review_cmd], cwd=str(repo_path), start_new_session=True)
+                print(f"[foundry] review agent spawned: {review_cmd}", file=sys.stderr)
+            except Exception as e:
+                print(f"[foundry] review agent spawn failed: {e}", file=sys.stderr)
 
 
 def maybe_create_beads_issue(integrations_cfg: dict, result: dict, run_dir: Path, explanation: str | None = None) -> None:

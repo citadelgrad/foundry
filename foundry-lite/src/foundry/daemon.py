@@ -11,6 +11,7 @@ from croniter import CroniterBadCronError, croniter
 
 from foundry.config import load_config
 from foundry.global_config import list_repos
+from foundry.scheduler import _load_registry as _load_schedule_registry
 
 _LAUNCHD_LABEL = "com.foundry.daemon"
 _PLIST = Path.home() / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
@@ -127,6 +128,45 @@ WantedBy=default.target
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
         subprocess.run(["systemctl", "--user", "enable", "--now", "foundry-daemon"], check=False)
         print(f"[foundry daemon] installed and started (systemd user)\n  log: journalctl --user -u foundry-daemon -f", file=sys.stderr)
+
+    _warn_daemon_schedule_overlap()
+
+
+def _warn_daemon_schedule_overlap() -> None:
+    """Advisory-only, non-blocking: warn about repo/profile pairs that the
+    daemon will poll (from each registered repo's foundry.yaml schedules)
+    and that are also separately installed as an OS-level schedule via
+    `foundry schedule install` — such a pair fires twice per trigger.
+    Never raises — a failure here must not fail daemon start."""
+    try:
+        registry = _load_schedule_registry()
+    except Exception:
+        return
+    if not registry:
+        return
+    installed = {
+        (str(Path(info["repo"]).resolve()), info["profile"]): name
+        for name, info in registry.items()
+    }
+    try:
+        repos = list_repos()
+    except Exception:
+        return
+    for repo in repos:
+        try:
+            cfg = load_config(str(Path(repo["path"]) / "foundry.yaml"))
+        except Exception:
+            continue
+        repo_key = str(Path(repo["path"]).resolve())
+        for sched in cfg.schedules.values():
+            match = installed.get((repo_key, sched.profile))
+            if match:
+                print(
+                    f'warning: repo "{repo["path"]}" profile "{sched.profile}" is both '
+                    f'polled by the daemon and installed as schedule "{match}" '
+                    f'(foundry schedule install) — it may fire twice',
+                    file=sys.stderr,
+                )
 
 
 def daemon_stop() -> None:

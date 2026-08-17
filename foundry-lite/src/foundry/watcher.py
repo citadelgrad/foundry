@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import time
 
-from .runner import run_profile
+from .runner import ProfileNotFoundError, prepare_and_run_profile
 
 
 class FoundryWatcher:
@@ -18,7 +18,7 @@ class FoundryWatcher:
         self._lock = threading.Lock()
 
     def start(self):
-        run_profile(self.profile, repo_path=self.repo)
+        self._run_once(fatal=True)
         print("[foundry] watching for changes (Ctrl-C to stop)...")
 
         watcher = self
@@ -57,5 +57,22 @@ class FoundryWatcher:
 
     def _do_rerun(self):
         print("-" * 60)
-        run_profile(self.profile, repo_path=self.repo)
+        self._run_once(fatal=False)
         print("[foundry] watching for changes (Ctrl-C to stop)...")
+
+    def _run_once(self, fatal: bool):
+        try:
+            prepare_and_run_profile(self.profile, self.repo)
+        except ProfileNotFoundError as e:
+            available = ", ".join(e.available) or "(none)"
+            print(f"error: profile '{self.profile}' not found\n\nAvailable profiles: {available}", file=sys.stderr)
+            if fatal:
+                sys.exit(1)
+        except FileNotFoundError:
+            print(f"error: foundry.yaml not found in {self.repo}\n\nRun 'foundry init' to generate one from detected gates.", file=sys.stderr)
+            if fatal:
+                sys.exit(1)
+        except ValueError as e:
+            print(f"error: invalid foundry.yaml — {e}", file=sys.stderr)
+            if fatal:
+                sys.exit(1)
