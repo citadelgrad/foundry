@@ -1,0 +1,24 @@
+foundry-lite/tests/test_explain_dedup.py
+  s_c995f0c656569f::t_68e26bcb0bd46e 14
+  s_c995f0c656569f::t_25354ab8897479 1-13,15-173
+foundry-lite/src/foundry/runner.py
+  s_c995f0c656569f::t_a3801c2d0a6321 22-27
+  s_c995f0c656569f::t_da99fa1d517f8a 312,315,326
+  s_c995f0c656569f::t_16c14bede4968a 375-385,393-406
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d63c056f0931325ad3e5bbd7cb65cf1e19ea3b2c",
+  "prompts": {},
+  "sessions": {
+    "s_c995f0c656569f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f122f13c-b96c-4c30-bb0c-b88bd755d564",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
