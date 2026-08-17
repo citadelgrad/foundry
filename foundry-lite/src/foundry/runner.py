@@ -19,6 +19,12 @@ from foundry.config import (
 
 LOG_SIZE_CAP = 512 * 1024  # 512KB
 
+# Sole default model for foundry.explain.explain_run when
+# integrations.explain.model is not set in foundry.yaml — shared by the
+# always-on next_actions explanation and the optional explanation.md/beads
+# integration output, so both use the same default absent explicit config.
+DEFAULT_EXPLAIN_MODEL = "claude-haiku-4-5-20251001"
+
 
 @dataclass
 class GateResult:
@@ -303,9 +309,10 @@ def run_profile(
     write_summary_md(run_result_obj, run_dir)
     write_evidence(run_dir, result_dict)
     write_run_index(run_dir, result_dict)
+    explanation = None
     if result_dict["decision"] == "fail":
         explain_cfg = (integrations_cfg or {}).get("explain", {})
-        model = explain_cfg.get("model", "claude-haiku-4-5-20251001")
+        model = explain_cfg.get("model", DEFAULT_EXPLAIN_MODEL)
         explanation = ""
         next_action = ""
         try:
@@ -316,7 +323,7 @@ def run_profile(
         write_next_action(run_dir, result_dict, explanation, next_action)
     if result_dict["decision"] == "pass":
         resolve_next_action_for_run(result_dict["repo"]["path"], result_dict["profile"])
-    _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path)
+    _fire_integrations(integrations_cfg or {}, result_dict, run_dir, repo_path, explanation=explanation)
     return result_dict
 
 
@@ -365,28 +372,38 @@ def prepare_and_run_profile(profile_name: str, repo_path: Path) -> dict:
     return result
 
 
-def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo_path: Path) -> None:
+def _fire_integrations(
+    integrations_cfg: dict, result: dict, run_dir: Path, repo_path: Path, explanation: str | None = None,
+) -> None:
+    """Fire configured integrations for a fail/needs_human Decision.
+
+    `explanation`, when not None, is the explanation run_profile already
+    computed once for a fail Decision's next_actions record — reused here so
+    a single fail Decision with explain configured triggers exactly one
+    explain_run call, not two. For needs_human (run_profile never computes
+    an explanation), this function still computes its own, as before.
+    """
     decision = result["decision"]
     is_failure = decision in ("fail", "needs_human")
     if not is_failure:
         return
 
-    explanation: str | None = None
-
     explain_cfg = integrations_cfg.get("explain", {})
     if explain_cfg and explain_cfg.get("on_failure"):
-        import os
-        from foundry.explain import explain_run, required_env_key
-        model = explain_cfg.get("model", "gemini-3.5-flash")
-        if os.environ.get(required_env_key(model)):
-            try:
-                explanation = explain_run(run_dir, model)
-                (run_dir / "explanation.md").write_text(explanation)
-                print(explanation, file=sys.stderr)
-            except Exception as e:
-                print(f"[foundry] explain failed: {e}", file=sys.stderr)
-        else:
-            print(f"[foundry] explain skipped: {required_env_key(model)} not set", file=sys.stderr)
+        if explanation is None:
+            import os
+            from foundry.explain import explain_run, required_env_key
+            model = explain_cfg.get("model", DEFAULT_EXPLAIN_MODEL)
+            if os.environ.get(required_env_key(model)):
+                try:
+                    explanation = explain_run(run_dir, model)
+                except Exception as e:
+                    print(f"[foundry] explain failed: {e}", file=sys.stderr)
+            else:
+                print(f"[foundry] explain skipped: {required_env_key(model)} not set", file=sys.stderr)
+        if explanation:
+            (run_dir / "explanation.md").write_text(explanation)
+            print(explanation, file=sys.stderr)
 
     maybe_create_beads_issue(integrations_cfg, result, run_dir, explanation)
 
