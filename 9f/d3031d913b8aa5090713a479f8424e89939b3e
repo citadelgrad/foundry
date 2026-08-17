@@ -1,0 +1,24 @@
+foundry-lite/src/foundry/scheduler.py
+  s_c995f0c656569f::t_9c96552e95b0c6 12,35-52
+foundry-lite/src/foundry/daemon.py
+  s_c995f0c656569f::t_3b72b235e2d94c 14
+  s_c995f0c656569f::t_0f1003489ea466 132-170
+foundry-lite/tests/test_daemon_schedule_overlap.py
+  s_c995f0c656569f::t_2a9979e5ba9e87 1-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9fd3031d913b8aa5090713a479f8424e89939b3e",
+  "prompts": {},
+  "sessions": {
+    "s_c995f0c656569f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f122f13c-b96c-4c30-bb0c-b88bd755d564",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
