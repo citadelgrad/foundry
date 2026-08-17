@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Foundry current state + proposed additions</title>
+  <style>
+    :root {
+      --paper: #f6f0e5;
+      --ink: #17130d;
+      --muted: #625847;
+      --line: #2b2418;
+      --current: #dbeafe;
+      --current-strong: #2563eb;
+      --proposed: #ffedd5;
+      --proposed-strong: #ea580c;
+      --risk: #fee2e2;
+      --risk-strong: #dc2626;
+      --ok: #dcfce7;
+      --ok-strong: #16a34a;
+      --card: #fffaf0;
+      --shadow: rgba(23, 19, 13, 0.16);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main { max-width: 1240px; margin: 0 auto; padding: 28px; }
+    header {
+      border: 3px solid var(--line);
+      background: var(--card);
+      padding: 22px;
+      box-shadow: 8px 8px 0 var(--shadow);
+      margin-bottom: 22px;
+    }
+    h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -0.03em; }
+    h2 { margin: 0 0 12px; font-size: 20px; }
+    h3 { margin: 0 0 6px; font-size: 15px; }
+    p { margin: 0 0 10px; }
+    code { background: rgba(43, 36, 24, 0.08); padding: 1px 5px; border-radius: 4px; }
+    .thesis { font-size: 18px; max-width: 880px; }
+    .muted { color: var(--muted); }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 18px 0 0;
+    }
+    button {
+      border: 2px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      font-weight: 800;
+      padding: 9px 12px;
+      cursor: pointer;
+      box-shadow: 3px 3px 0 var(--shadow);
+    }
+    button.active { background: var(--ink); color: white; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 2.1fr) minmax(300px, 0.75fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .panel, .legend, .table-panel {
+      border: 2px solid var(--line);
+      background: var(--card);
+      padding: 16px;
+      box-shadow: 5px 5px 0 var(--shadow);
+    }
+    .diagram-wrap { overflow-x: auto; }
+    svg { display: block; min-width: 0; width: 100%; height: auto; }
+
+    .node rect, .node path {
+      stroke: var(--line);
+      stroke-width: 2.2;
+      filter: drop-shadow(3px 3px 0 rgba(23, 19, 13, 0.12));
+      transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
+    }
+    .node text { pointer-events: none; fill: var(--ink); font-weight: 800; }
+    .node .sub { font-weight: 600; fill: var(--muted); font-size: 12px; }
+    .node.current rect { fill: var(--current); }
+    .node.current.core rect { fill: var(--ok); }
+    .node.proposed rect { fill: var(--proposed); stroke: var(--proposed-strong); stroke-dasharray: 8 5; }
+    .node.risk rect { fill: var(--risk); stroke: var(--risk-strong); }
+    .edge { stroke: var(--line); stroke-width: 2; fill: none; marker-end: url(#arrow); opacity: 0.78; }
+    .edge.proposed { stroke: var(--proposed-strong); stroke-dasharray: 7 6; opacity: 0.9; }
+    .edge.risk { stroke: var(--risk-strong); stroke-dasharray: 4 5; }
+    .node { cursor: pointer; }
+    .node:hover rect, .node:hover path, .node.pinned rect { stroke-width: 3.2; filter: drop-shadow(5px 5px 0 rgba(23, 19, 13, 0.2)); }
+
+    body.mode-current .proposed-only,
+    body.mode-current .edge.proposed { opacity: 0.13; }
+    body.mode-current .node.proposed rect { fill: #f3eadc; stroke: #a89b88; }
+    body.mode-current .node.proposed text { fill: #7a6f60; }
+    body.mode-proposed .proposed-only,
+    body.mode-delta .proposed-only { opacity: 1; }
+    body.mode-delta .current:not(.risk) { opacity: 0.38; }
+    body.mode-delta .edge:not(.proposed):not(.risk) { opacity: 0.20; }
+
+    .detail-title { font-size: 18px; font-weight: 900; margin-bottom: 6px; }
+    .badge-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 10px; }
+    .badge { border: 1.5px solid var(--line); padding: 2px 7px; font-size: 12px; font-weight: 800; background: white; }
+    .badge.current { background: var(--current); color: #123d88; }
+    .badge.proposed { background: var(--proposed); color: #8a3300; }
+    .badge.risk { background: var(--risk); color: #8a1111; }
+    .badge.ok { background: var(--ok); color: #0f6b2b; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-top: 1.5px solid rgba(43, 36, 24, 0.28); padding: 9px 8px; vertical-align: top; text-align: left; }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .status { font-weight: 900; white-space: nowrap; }
+    .done { color: var(--ok-strong); }
+    .partial { color: var(--proposed-strong); }
+    .blocked { color: var(--risk-strong); }
+
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+    .card { border: 2px solid var(--line); background: var(--card); padding: 14px; box-shadow: 4px 4px 0 var(--shadow); }
+    .card ul { margin: 8px 0 0 18px; padding: 0; }
+    .card li { margin: 5px 0; }
+
+    .hover-hint { margin-top: 10px; color: var(--muted); font-size: 13px; }
+    .callout { background: #fff; border-left: 6px solid var(--proposed-strong); padding: 10px 12px; margin-top: 12px; }
+
+    @media (max-width: 980px) {
+      main { padding: 16px; }
+      .grid, .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body class="mode-proposed">
+<main>
+  <header>
+    <h1>Foundry: current architecture + proposed additions</h1>
+    <p class="thesis">Foundry is currently a local, file-backed quality gate runner with structured evidence, scheduling, run indexing, and agent hooks. The remaining work is mostly hardening: fix watch mode, make explain less brittle, improve tests around Phase 2/3 surfaces, and consolidate stale planning docs.</p>
+    <div class="toolbar" aria-label="diagram mode controls">
+      <button data-mode="current">Current only</button>
+      <button data-mode="proposed" class="active">Current + proposed</button>
+      <button data-mode="delta">Delta focus</button>
+    </div>
+  </header>
+
+  <section class="grid">
+    <div class="panel diagram-wrap">
+      <h2>System map</h2>
+      <svg viewBox="0 0 1120 770" role="img" aria-labelledby="svg-title svg-desc">
+        <title id="svg-title">Foundry system map</title>
+        <desc id="svg-desc">Interactive SVG showing current Foundry components and proposed additions. Solid blue and green nodes are current. Dashed orange nodes are proposed. Red nodes mark known runtime risks.</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2b2418"></path>
+          </marker>
+        </defs>
+
+        <path class="edge" d="M 170 120 C 230 120, 250 120, 315 120" />
+        <path class="edge" d="M 470 120 C 530 120, 555 120, 615 120" />
+        <path class="edge" d="M 770 120 C 832 120, 850 120, 915 120" />
+        <path class="edge" d="M 695 180 C 695 240, 695 255, 695 315" />
+        <path class="edge" d="M 695 430 C 695 475, 640 495, 585 520" />
+        <path class="edge" d="M 695 430 C 750 480, 812 505, 885 525" />
+        <path class="edge" d="M 390 180 C 360 250, 332 310, 305 360" />
+        <path class="edge" d="M 390 180 C 430 250, 468 310, 505 360" />
+        <path class="edge" d="M 390 180 C 510 250, 602 285, 695 315" />
+        <path class="edge" d="M 390 180 C 250 275, 160 360, 130 500" />
+        <path class="edge risk" d="M 320 560 C 390 560, 440 555, 505 545" />
+        <path class="edge proposed proposed-only" d="M 960 580 C 900 660, 730 690, 550 680" />
+        <path class="edge proposed proposed-only" d="M 180 610 C 260 690, 390 705, 550 680" />
+        <path class="edge proposed proposed-only" d="M 1000 180 C 1035 250, 1035 320, 1000 390" />
+
+        <g class="node current core" data-title="CLI entrypoint" data-status="Current" data-kind="Core" data-detail="argparse CLI in foundry-lite/src/foundry/cli.py. Commands include doctor, init, run, latest, explain, schedule, repos, and daemon." transform="translate(40 80)">
+          <rect width="130" height="80" rx="8" />
+          <text x="18" y="32">foundry CLI</text>
+          <text class="sub" x="18" y="55">argparse commands</text>
+        </g>
+
+        <g class="node current core" data-title="Configuration" data-status="Current" data-kind="Core" data-detail="foundry.yaml is parsed into dataclasses. Supports run, act, dagger, docker blocks, schedules, integrations, and parallel profiles." transform="translate(315 80)">
+          <rect width="155" height="80" rx="8" />
+          <text x="18" y="32">foundry.yaml</text>
+          <text class="sub" x="18" y="55">profiles + gates</text>
+        </g>
+
+        <g class="node current core" data-title="Runner engine" data-status="Current" data-kind="Core" data-detail="runner.py executes gates, derives pass/warn/fail/needs_human, writes logs, supports fail-fast sequential mode and parallel mode." transform="translate(615 80)">
+          <rect width="155" height="100" rx="8" />
+          <text x="18" y="35">Runner engine</text>
+          <text class="sub" x="18" y="60">sequential + parallel</text>
+          <text class="sub" x="18" y="78">decision model</text>
+        </g>
+
+        <g class="node current" data-title="Shell / Make / just / task / mise" data-status="Current" data-kind="Runner backend" data-detail="run: gates are executed through subprocess. Prefixes classify make, just, task, mise, or shell." transform="translate(230 350)">
+          <rect width="150" height="86" rx="8" />
+          <text x="16" y="31">Shell gates</text>
+          <text class="sub" x="16" y="55">make / just / task</text>
+        </g>
+
+        <g class="node current" data-title="Act runner" data-status="Current" data-kind="Runner backend" data-detail="act: blocks run GitHub Actions locally with Docker/Colima. Doctor checks Docker and act only when act gates exist." transform="translate(440 350)">
+          <rect width="130" height="86" rx="8" />
+          <text x="18" y="31">Act gates</text>
+          <text class="sub" x="18" y="55">GHA locally</text>
+        </g>
+
+        <g class="node current" data-title="Dagger runner" data-status="Current" data-kind="Runner backend" data-detail="dagger: blocks call dagger call -m <module> <function> plus args. Doctor verifies dagger binary when configured." transform="translate(650 350)">
+          <rect width="130" height="86" rx="8" />
+          <text x="18" y="31">Dagger</text>
+          <text class="sub" x="18" y="55">pipeline backend</text>
+        </g>
+
+        <g class="node current" data-title="Docker isolation" data-status="Current" data-kind="Isolation" data-detail="Profile-level and gate-level docker: blocks wrap run: gates in docker run with mounted workspace and configured volumes. act gates manage their own containers." transform="translate(915 80)">
+          <rect width="165" height="100" rx="8" />
+          <text x="18" y="35">Docker isolation</text>
+          <text class="sub" x="18" y="60">profile/gate docker:</text>
+          <text class="sub" x="18" y="78">v0.3.0</text>
+        </g>
+
+        <g class="node current core" data-title="Run artifacts" data-status="Current" data-kind="Evidence" data-detail="Each run writes result.json, summary.md, metadata.json, logs, evidence.json, and updates .foundry/latest." transform="translate(615 525)">
+          <rect width="155" height="95" rx="8" />
+          <text x="18" y="34">Run artifacts</text>
+          <text class="sub" x="18" y="58">result + summary</text>
+          <text class="sub" x="18" y="76">evidence + logs</text>
+        </g>
+
+        <g class="node current" data-title="Global run index" data-status="Current, uncommitted local changes present" data-kind="Storage" data-detail="output.py writes ~/.foundry/foundry.db with runs and next_actions tables. Current tree has uncommitted changes around next-action resolution." transform="translate(445 520)">
+          <rect width="140" height="100" rx="8" />
+          <text x="18" y="34">SQLite index</text>
+          <text class="sub" x="18" y="58">~/.foundry/</text>
+          <text class="sub" x="18" y="76">runs + actions</text>
+        </g>
+
+        <g class="node current" data-title="Integrations" data-status="Current" data-kind="External hooks" data-detail="Foundry can call explain, create Beads issues, and spawn configured agent commands after failure. Approval-required mode blocks auto-fire on fail." transform="translate(850 520)">
+          <rect width="165" height="105" rx="8" />
+          <text x="18" y="32">Integrations</text>
+          <text class="sub" x="18" y="56">explain / beads</text>
+          <text class="sub" x="18" y="74">agent hook</text>
+        </g>
+
+        <g class="node risk current" data-title="Watch mode" data-status="Broken" data-kind="Known gap" data-detail="foundry run --watch currently calls run_profile with the old signature and crashes immediately. Needs a watcher refactor to call the CLI run path or construct run_dir/result metadata correctly." transform="translate(70 505)">
+          <rect width="250" height="105" rx="8" />
+          <text x="18" y="32">Watch mode</text>
+          <text class="sub" x="18" y="56">implemented but broken</text>
+          <text class="sub" x="18" y="74">signature mismatch</text>
+        </g>
+
+        <g class="node risk current" data-title="Explain pass-path UX" data-status="Needs fix" data-kind="Known gap" data-detail="CLI checks provider API keys before explain_run can notice a passing run. Passing runs should return without requiring GOOGLE_API_KEY or ANTHROPIC_API_KEY." transform="translate(870 365)">
+          <rect width="190" height="95" rx="8" />
+          <text x="18" y="32">Explain UX</text>
+          <text class="sub" x="18" y="56">key required too early</text>
+        </g>
+
+        <g class="node proposed proposed-only" data-title="Watch runner repair" data-status="Proposed" data-kind="Hardening" data-detail="Refactor watch mode to reuse the real cmd_run execution path or a helper that creates run_id, run_dir, metadata, latest symlink, and integrations consistently. Add a focused smoke test." transform="translate(60 650)">
+          <rect width="220" height="82" rx="8" />
+          <text x="18" y="31">Fix watch runner</text>
+          <text class="sub" x="18" y="55">real rerun loop</text>
+        </g>
+
+        <g class="node proposed proposed-only" data-title="Explain no-key pass path" data-status="Proposed" data-kind="Hardening" data-detail="Load result.json first. If decision is pass, print the no-explanation message without checking provider credentials. Only require keys when a model call is needed." transform="translate(880 650)">
+          <rect width="210" height="82" rx="8" />
+          <text x="18" y="31">Fix explain pass</text>
+          <text class="sub" x="18" y="55">no key for no-op</text>
+        </g>
+
+        <g class="node proposed proposed-only" data-title="Regression coverage" data-status="Proposed" data-kind="Tests" data-detail="Add focused tests for watch startup, latest --evidence, dagger config validation, beads failure parsing, init generation, and docker command wrapping. Current test suite mostly covers run index behavior." transform="translate(435 650)">
+          <rect width="230" height="82" rx="8" />
+          <text x="18" y="31">Regression tests</text>
+          <text class="sub" x="18" y="55">Phase 2/3 surfaces</text>
+        </g>
+      </svg>
+      <p class="hover-hint">Hover a node for quick context. Click a node to pin its details. Use the mode buttons to fade in/out proposed additions.</p>
+    </div>
+
+    <aside class="legend" aria-live="polite">
+      <h2>Selected component</h2>
+      <div id="detail">
+        <div class="detail-title">Runner engine</div>
+        <div class="badge-row"><span class="badge current">Current</span><span class="badge ok">Core</span></div>
+        <p>runner.py executes gates, derives pass/warn/fail/needs_human, writes logs, supports fail-fast sequential mode and parallel mode.</p>
+      </div>
+      <div class="callout">
+        <strong>Read this first:</strong> the architecture is usable today, but Phase 2 should not be called complete until watch mode is fixed.
+      </div>
+    </aside>
+  </section>
+
+  <section class="cards" aria-label="overview cards">
+    <div class="card">
+      <h2>Current product shape</h2>
+      <ul>
+        <li>Local gate runner, not a CI replacement.</li>
+        <li>Repo-local config in <code>foundry.yaml</code>.</li>
+        <li>Evidence stored under <code>.foundry/runs/</code>.</li>
+        <li>Global SQLite index under <code>~/.foundry/</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Working surfaces</h2>
+      <ul>
+        <li><code>run</code>, <code>doctor</code>, <code>latest</code>, <code>schedule</code>.</li>
+        <li><code>init</code> and <code>repos</code>.</li>
+        <li>Shell, Act, Dagger, Docker-wrapped gates.</li>
+        <li>Evidence JSON and run-index writes.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Next useful additions</h2>
+      <ul>
+        <li>Repair <code>--watch</code>.</li>
+        <li>Make passing <code>explain</code> keyless.</li>
+        <li>Broaden tests beyond run-index behavior.</li>
+        <li>Collapse stale plan/spec docs into one current brief.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="table-panel" style="margin-top:18px;">
+    <h2>Implementation matrix</h2>
+    <table>
+      <thead><tr><th>Area</th><th>Status</th><th>Current files</th><th>Proposed layer</th></tr></thead>
+      <tbody>
+        <tr><td>Gate execution</td><td class="status done">Built</td><td><code>runner.py</code>, <code>config.py</code></td><td>Add coverage for sequential fail-fast, parallel timestamps, docker wrapping, and timeouts.</td></tr>
+        <tr><td>Evidence output</td><td class="status done">Built</td><td><code>output.py</code>, <code>cli.py</code></td><td>Document canonical evidence schema in current docs, not scattered specs.</td></tr>
+        <tr><td>Run index / approval</td><td class="status done">Built, uncommitted edits</td><td><code>output.py</code>, <code>runner.py</code>, <code>test_run_index.py</code></td><td>Commit or intentionally revise current next-action behavior.</td></tr>
+        <tr><td>Phase 2 explain</td><td class="status partial">Mostly built</td><td><code>explain.py</code>, <code>cli.py</code></td><td>Move API-key check after pass/no-op detection.</td></tr>
+        <tr><td>Phase 2 watch</td><td class="status blocked">Broken</td><td><code>watcher.py</code>, <code>cli.py</code></td><td>Refactor watcher to use real run lifecycle and add smoke test.</td></tr>
+        <tr><td>Phase 3 ecosystem</td><td class="status done">Built</td><td><code>global_config.py</code>, <code>init_cmd.py</code>, <code>runner.py</code></td><td>Add tests for init/repo listing/beads/dagger surfaces.</td></tr>
+        <tr><td>Docs / plans</td><td class="status partial">Messy</td><td>root PRDs/specs + <code>docs/specs/</code></td><td>Replace stale plan files with this current-state brief plus one canonical spec.</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+<script>
+  const body = document.body;
+  const buttons = [...document.querySelectorAll('button[data-mode]')];
+  const detail = document.getElementById('detail');
+  let pinned = null;
+
+  function setMode(mode) {
+    body.classList.remove('mode-current', 'mode-proposed', 'mode-delta');
+    body.classList.add(`mode-${mode}`);
+    buttons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+  }
+
+  function badgeClass(status, kind) {
+    const s = `${status} ${kind}`.toLowerCase();
+    if (s.includes('broken') || s.includes('gap')) return 'risk';
+    if (s.includes('proposed')) return 'proposed';
+    if (s.includes('core')) return 'ok';
+    return 'current';
+  }
+
+  function appendText(tag, className, text, parent) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  }
+
+  function showNode(node) {
+    const title = node.dataset.title;
+    const status = node.dataset.status;
+    const kind = node.dataset.kind;
+    const text = node.dataset.detail;
+    detail.replaceChildren();
+    appendText('div', 'detail-title', title, detail);
+    const badges = document.createElement('div');
+    badges.className = 'badge-row';
+    detail.appendChild(badges);
+    appendText('span', `badge ${badgeClass(status, kind)}`, status, badges);
+    appendText('span', 'badge', kind, badges);
+    appendText('p', '', text, detail);
+  }
+
+  buttons.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+  document.querySelectorAll('.node').forEach(node => {
+    node.addEventListener('mouseenter', () => { if (!pinned) showNode(node); });
+    node.addEventListener('click', () => {
+      if (pinned) pinned.classList.remove('pinned');
+      pinned = pinned === node ? null : node;
+      if (pinned) {
+        pinned.classList.add('pinned');
+        showNode(pinned);
+      }
+    });
+  });
+</script>
+</body>
+</html>
