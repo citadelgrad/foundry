@@ -1,6 +1,7 @@
 """Tests for the SQLite run index, auto-explain, and approval gate logic."""
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -371,12 +372,13 @@ class TestPruning:
 
     def test_run_at_45_days_old_not_pruned(self, db):
         from foundry.run_index import _ensure_schema
+        mid_ts = (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
         with self._conn(db) as conn:
             _ensure_schema(conn)
             conn.execute(
                 "INSERT INTO runs (run_id,repo_path,profile,decision,started_at,finished_at,"
                 "gate_count,result_path,summary_path) VALUES (?,?,?,?,?,?,0,?,?)",
-                ("mid", "/r", "q", "pass", "2026-05-13T00:00:00Z", "2026-05-13T00:00:00Z", "/x", "/y"),
+                ("mid", "/r", "q", "pass", mid_ts, mid_ts, "/x", "/y"),
             )
         with self._conn(db) as conn:
             _ensure_schema(conn)
