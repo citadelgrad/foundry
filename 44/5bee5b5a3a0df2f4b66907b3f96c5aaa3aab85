@@ -1,0 +1,20 @@
+foundry-lite/tests/test_run_index.py
+  s_d79269fa4c2b5f::t_7d50e0d5fed9aa 375,381
+  s_d79269fa4c2b5f::t_f7e2746e161201 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "445bee5b5a3a0df2f4b66907b3f96c5aaa3aab85",
+  "prompts": {},
+  "sessions": {
+    "s_d79269fa4c2b5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cda7d951-8018-4273-96a7-91ac17181d26",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
