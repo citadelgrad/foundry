@@ -1,0 +1,31 @@
+foundry-lite/tests/test_gate_classification.py
+  s_c995f0c656569f::t_d4e2bce2b1fca3 9
+  s_c995f0c656569f::t_2e55b5b3b8b974 1-8,10-121
+foundry-lite/src/foundry/config.py
+  s_c995f0c656569f::t_b5bd3678346d3c 143-180
+  s_c995f0c656569f::t_826c34088db1e6 134
+foundry-lite/src/foundry/runner.py
+  s_c995f0c656569f::t_f615917721b2c4 9-17
+  s_c995f0c656569f::t_a4c3e2afc3487e 55-57,62-63,65
+foundry-lite/src/foundry/doctor.py
+  s_c995f0c656569f::t_c95eca14363f56 68,73,78
+  s_c995f0c656569f::t_d49504863ed239 5
+  s_c995f0c656569f::t_c3b9ecd1461654 57
+  s_c995f0c656569f::t_65a03cb4edf111 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d6d9693fc2f4979470c7c3297331b81c7e422bc8",
+  "prompts": {},
+  "sessions": {
+    "s_c995f0c656569f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f122f13c-b96c-4c30-bb0c-b88bd755d564",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
