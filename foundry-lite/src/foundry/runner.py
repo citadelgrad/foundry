@@ -313,6 +313,51 @@ def run_profile(
     return result_dict
 
 
+class ProfileNotFoundError(ValueError):
+    def __init__(self, profile_name: str, available: list[str]):
+        self.profile_name = profile_name
+        self.available = available
+        super().__init__(f"profile '{profile_name}' not found")
+
+
+def prepare_and_run_profile(profile_name: str, repo_path: Path) -> dict:
+    """Load foundry.yaml, set up a run directory, and execute profile_name against repo_path.
+
+    Single seam for the "prepare and run a Profile" flow shared by `foundry run`
+    and `foundry run --watch`, so both build run_id/run_dir/git_info the same way
+    and invoke run_profile identically.
+
+    Raises FileNotFoundError / ValueError from config loading, and
+    ProfileNotFoundError (a ValueError) if profile_name isn't defined in foundry.yaml.
+    """
+    from foundry.config import load_config
+    from foundry.output import update_latest_symlink, write_gitignore_if_missing, write_metadata_json
+
+    cfg = load_config(str(repo_path / "foundry.yaml"))
+    if profile_name not in cfg.profiles:
+        raise ProfileNotFoundError(profile_name, list(cfg.profiles))
+    profile = cfg.profiles[profile_name]
+
+    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    foundry_dir = repo_path / ".foundry"
+    run_dir = foundry_dir / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_gitignore_if_missing(foundry_dir)
+
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    git = get_git_info(str(repo_path))
+    result = run_profile(
+        profile, profile_name, run_dir, repo_path,
+        integrations_cfg=cfg.integrations,
+        run_id=run_id,
+        git_info=git,
+        started_at=started_at,
+    )
+    write_metadata_json(run_dir)
+    update_latest_symlink(run_dir)
+    return result
+
+
 def _fire_integrations(integrations_cfg: dict, result: dict, run_dir: Path, repo_path: Path) -> None:
     decision = result["decision"]
     is_failure = decision in ("fail", "needs_human")

@@ -2,17 +2,11 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 from foundry.config import load_config
 from foundry.doctor import run_doctor
-from foundry.output import (
-    update_latest_symlink,
-    write_gitignore_if_missing,
-    write_metadata_json,
-)
-from foundry.runner import get_git_info, run_profile
+from foundry.runner import ProfileNotFoundError, prepare_and_run_profile
 from foundry.scheduler import install_schedule, list_schedules, remove_schedule
 
 
@@ -24,6 +18,16 @@ def cmd_doctor(args):
     sys.exit(run_doctor(_repo(args)))
 
 
+def _print_config_error(e_type, e, repo):
+    if e_type is FileNotFoundError:
+        print(f"error: foundry.yaml not found in {repo}\n\nRun 'foundry init' to generate one from detected gates.", file=sys.stderr)
+    elif e_type is ProfileNotFoundError:
+        available = ", ".join(e.available) or "(none)"
+        print(f"error: profile '{e.profile_name}' not found\n\nAvailable profiles: {available}\n\n  foundry run {e.available[0] if e.available else 'ci'}", file=sys.stderr)
+    else:
+        print(f"error: invalid foundry.yaml — {e}", file=sys.stderr)
+
+
 def cmd_run(args):
     repo = _repo(args)
     profile_name = args.profile or args.profile_flag
@@ -31,21 +35,6 @@ def cmd_run(args):
         print("error: profile name required\n\n  foundry run ci\n  foundry run --profile ci\n\nRun 'foundry run --help' for options.", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        cfg = load_config(str(repo / "foundry.yaml"))
-    except FileNotFoundError:
-        print(f"error: foundry.yaml not found in {repo}\n\nRun 'foundry init' to generate one from detected gates.", file=sys.stderr)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"error: invalid foundry.yaml — {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if profile_name not in cfg.profiles:
-        available = ", ".join(cfg.profiles) or "(none)"
-        print(f"error: profile '{profile_name}' not found\n\nAvailable profiles: {available}\n\n  foundry run {next(iter(cfg.profiles), 'ci')}", file=sys.stderr)
-        sys.exit(1)
-
-    profile = cfg.profiles[profile_name]
     debounce_seconds = float(args.debounce.rstrip("s"))
 
     if args.watch and args.json:
@@ -53,8 +42,21 @@ def cmd_run(args):
         sys.exit(1)
 
     if args.dry_run:
+        try:
+            cfg = load_config(str(repo / "foundry.yaml"))
+        except FileNotFoundError as e:
+            _print_config_error(FileNotFoundError, e, repo)
+            sys.exit(1)
+        except ValueError as e:
+            _print_config_error(ValueError, e, repo)
+            sys.exit(1)
+
+        if profile_name not in cfg.profiles:
+            _print_config_error(ProfileNotFoundError, ProfileNotFoundError(profile_name, list(cfg.profiles)), repo)
+            sys.exit(1)
+
+        profile = cfg.profiles[profile_name]
         from foundry.runner import _resolve_docker, _wrap_docker
-        repo = _repo(args)
         for gate in profile.gates:
             if gate.act:
                 info = f"act {gate.act.event} -W {gate.act.workflow}"
@@ -74,32 +76,27 @@ def cmd_run(args):
         watcher.start()
         return
 
-    run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-    foundry_dir = repo / ".foundry"
-    run_dir = foundry_dir / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    write_gitignore_if_missing(foundry_dir)
-
     from foundry.global_config import load_global_config
     gcfg = load_global_config()
     repo_alias = next((r["alias"] for r in gcfg.get("repos", []) if r.get("path") == str(repo)), None)
     alias_label = f" (repo: {repo_alias})" if repo_alias else ""
     print(f"[foundry] profile: {profile_name}{alias_label}", file=sys.stderr)
-    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    git = get_git_info(str(repo))
-    result = run_profile(
-        profile, profile_name, run_dir, repo,
-        integrations_cfg=cfg.integrations,
-        run_id=run_id,
-        git_info=git,
-        started_at=started_at,
-    )
-    write_metadata_json(run_dir)
-    update_latest_symlink(run_dir)
+
+    try:
+        result = prepare_and_run_profile(profile_name, repo)
+    except ProfileNotFoundError as e:
+        _print_config_error(ProfileNotFoundError, e, repo)
+        sys.exit(1)
+    except FileNotFoundError as e:
+        _print_config_error(FileNotFoundError, e, repo)
+        sys.exit(1)
+    except ValueError as e:
+        _print_config_error(ValueError, e, repo)
+        sys.exit(1)
 
     decision = result["decision"]
     print(f"[foundry] decision: {decision}", file=sys.stderr)
-    print(f"[foundry] evidence: {run_dir}", file=sys.stderr)
+    print(f"[foundry] evidence: {repo / '.foundry' / 'runs' / result['run_id']}", file=sys.stderr)
 
     if args.json:
         print(json.dumps(result, indent=2))
