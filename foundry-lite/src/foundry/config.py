@@ -131,13 +131,51 @@ def validate_config(cfg: dict) -> list[str]:
         for gate in profile.get("gates", []):
             if not gate.get("id"):
                 errors.append(f"profile '{name}' has gate missing 'id'")
-            if sum(["run" in gate, "act" in gate, "dagger" in gate]) != 1:
+            if sum(field in gate for field in GATE_KIND_FIELDS) != 1:
                 errors.append(f"profile '{name}' gate '{gate.get('id')}' must have exactly one of 'run', 'act', or 'dagger'")
             if gate.get("decision_on_failure", "fail") == "warn" and not gate.get("allow_failure", False):
                 errors.append(f"gate '{gate.get('id')}': decision_on_failure='warn' requires allow_failure=true")
             if (docker := gate.get("docker")) and not docker.get("image"):
                 errors.append(f"gate '{gate.get('id')}': docker block missing 'image'")
     return errors
+
+
+# Sole table of run-tool prefixes. Order matters: longer/more-specific
+# prefixes (e.g. "mise run ") must be checked before shorter ones would
+# otherwise be tried, though none currently collide.
+RUN_TOOL_PREFIXES: dict[str, str] = {
+    "make ": "make",
+    "just ": "just",
+    "task ": "task",
+    "mise run ": "mise",
+}
+
+# Sole list of fields validate_config uses to enforce "exactly one of
+# run/act/dagger" on a raw (pre-parse) gate dict.
+GATE_KIND_FIELDS = ("run", "act", "dagger")
+
+
+def classify_gate(gate) -> str:
+    """Classify a gate's execution kind.
+
+    Returns "act", "dagger", a run-tool name from RUN_TOOL_PREFIXES
+    (make/just/task/mise), or "shell". `gate` may be a GateConfig or a raw
+    dict as parsed from YAML — this is the sole place gate.run/gate.act/
+    gate.dagger and run-tool prefixes are inspected to determine kind.
+    """
+    if isinstance(gate, dict):
+        act, dagger, run = gate.get("act"), gate.get("dagger"), gate.get("run")
+    else:
+        act, dagger, run = gate.act, gate.dagger, gate.run
+    if act:
+        return "act"
+    if dagger:
+        return "dagger"
+    run_cmd = run or ""
+    for prefix, tool in RUN_TOOL_PREFIXES.items():
+        if run_cmd.startswith(prefix):
+            return tool
+    return "shell"
 
 
 _TIMEOUT_RE = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)$")

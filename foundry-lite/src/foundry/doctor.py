@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from foundry.config import load_config
+from foundry.config import classify_gate, load_config
 
 
 def run_doctor(repo_path: Path) -> int:
@@ -33,7 +33,7 @@ def run_doctor(repo_path: Path) -> int:
         return 1
 
     all_gates = [gate for profile in cfg.profiles.values() for gate in profile.gates]
-    has_act_gates = any(gate.act is not None for gate in all_gates)
+    has_act_gates = any(classify_gate(gate) == "act" for gate in all_gates)
 
     # 3. Docker check (act gates only)
     if has_act_gates:
@@ -54,7 +54,7 @@ def run_doctor(repo_path: Path) -> int:
             checks.append(("FAIL", "act: not found on PATH (required for Act gates)"))
 
     # 5. Dagger binary check (dagger gates only)
-    has_dagger_gates = any(gate.dagger is not None for gate in all_gates)
+    has_dagger_gates = any(classify_gate(gate) == "dagger" for gate in all_gates)
     if has_dagger_gates:
         dagger_path = shutil.which("dagger")
         if dagger_path:
@@ -65,17 +65,17 @@ def run_doctor(repo_path: Path) -> int:
     # 6. Runner check — per gate command prefix
     run_gates = [gate for gate in all_gates if gate.run]
     if run_gates:
-        if any(g.run.startswith("make") for g in run_gates):
+        if any(classify_gate(g) == "make" for g in run_gates):
             if (repo_path / "Makefile").exists():
                 checks.append(("PASS", "runners: Makefile detected"))
             else:
                 checks.append(("WARN", "runners: Makefile not found (make gates may fail)"))
-        if any(g.run.startswith("just") for g in run_gates):
+        if any(classify_gate(g) == "just" for g in run_gates):
             if (repo_path / "justfile").exists() or (repo_path / "Justfile").exists():
                 checks.append(("PASS", "runners: justfile detected"))
             else:
                 checks.append(("WARN", "runners: justfile not found (just gates may fail)"))
-        if any(g.run.startswith(("task", "mise")) for g in run_gates):
+        if any(classify_gate(g) in ("task", "mise") for g in run_gates):
             if (repo_path / "Taskfile.yml").exists() or (repo_path / "Taskfile.yaml").exists():
                 checks.append(("PASS", "runners: Taskfile detected"))
             else:

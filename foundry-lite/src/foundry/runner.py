@@ -6,7 +6,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from foundry.config import DockerConfig, FoundryConfig, GateConfig, ProfileConfig, parse_timeout
+from foundry.config import (
+    RUN_TOOL_PREFIXES,
+    DockerConfig,
+    FoundryConfig,
+    GateConfig,
+    ProfileConfig,
+    classify_gate,
+    parse_timeout,
+)
 
 
 LOG_SIZE_CAP = 512 * 1024  # 512KB
@@ -44,21 +52,17 @@ class RunResult:
 
 
 def detect_runner(run_cmd: str) -> tuple[str, str]:
-    if run_cmd.startswith("make "):
-        return "make", run_cmd
-    if run_cmd.startswith("just "):
-        return "just", run_cmd
-    if run_cmd.startswith("task "):
-        return "task", run_cmd
-    if run_cmd.startswith("mise run "):
-        return "mise", run_cmd
+    for prefix, tool in RUN_TOOL_PREFIXES.items():
+        if run_cmd.startswith(prefix):
+            return tool, run_cmd
     return "shell", f'sh -c "{run_cmd}"'
 
 
 def _detect_runner(gate: GateConfig) -> tuple[str, str]:
-    if gate.act:
+    kind = classify_gate(gate)
+    if kind == "act":
         return "act", f"act {gate.act.event} -W {gate.act.workflow}"
-    if gate.dagger:
+    if kind == "dagger":
         d = gate.dagger
         cmd = ["dagger", "call", "-m", d.module, d.function] + (d.args or [])
         return "dagger", " ".join(cmd)
