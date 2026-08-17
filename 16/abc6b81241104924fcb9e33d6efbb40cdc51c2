@@ -1,0 +1,26 @@
+foundry-lite/pyproject.toml
+  s_d79269fa4c2b5f::t_d7bd6693b6dc92 5
+  s_d79269fa4c2b5f::t_31d4df1cdd12fe 3
+foundry-lite/README.md
+  s_d79269fa4c2b5f::t_654cb381e5f05d 1-211
+docs/foundry-current-state.html
+  s_d79269fa4c2b5f::t_30d2d5dfe9beea 218
+foundry-lite/uv.lock
+  s_d79269fa4c2b5f::t_18e1887fad1506 405
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "16abc6b81241104924fcb9e33d6efbb40cdc51c2",
+  "prompts": {},
+  "sessions": {
+    "s_d79269fa4c2b5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cda7d951-8018-4273-96a7-91ac17181d26",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>"
+    }
+  }
+}
