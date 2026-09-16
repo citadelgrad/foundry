@@ -145,7 +145,7 @@ def remove_schedule(name: str) -> None:
     else:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         if result.returncode == 0:
-            lines = [l for l in result.stdout.splitlines() if f"# foundry:{name}" not in l]
+            lines = [line for line in result.stdout.splitlines() if f"# foundry:{name}" not in line]
             subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", text=True, check=False)
 
     del registry[name]

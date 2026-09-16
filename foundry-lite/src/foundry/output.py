@@ -5,7 +5,7 @@ import platform
 import sys
 from pathlib import Path
 
-from foundry.runner import GateResult, RunResult
+from foundry.runner import RunResult
 
 
 def write_result_json(run_result: RunResult, run_dir: Path) -> dict:

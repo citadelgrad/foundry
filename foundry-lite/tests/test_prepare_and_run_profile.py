@@ -6,7 +6,6 @@ used to call run_profile() with the wrong signature and crash with a
 TypeError the moment `foundry run --watch` fired.
 """
 import subprocess
-import sys
 from pathlib import Path
 from unittest.mock import patch
 

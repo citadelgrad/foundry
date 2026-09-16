@@ -111,7 +111,7 @@ def daemon_start() -> None:
 </dict>
 </plist>""")
         subprocess.run(["launchctl", "load", str(_PLIST)], check=False)
-        print(f"[foundry daemon] installed and started (launchd)\n  log: /tmp/foundry-daemon.log", file=sys.stderr)
+        print("[foundry daemon] installed and started (launchd)\n  log: /tmp/foundry-daemon.log", file=sys.stderr)
     else:
         _SYSTEMD.parent.mkdir(parents=True, exist_ok=True)
         _SYSTEMD.write_text(f"""[Unit]
@@ -127,7 +127,7 @@ WantedBy=default.target
 """)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
         subprocess.run(["systemctl", "--user", "enable", "--now", "foundry-daemon"], check=False)
-        print(f"[foundry daemon] installed and started (systemd user)\n  log: journalctl --user -u foundry-daemon -f", file=sys.stderr)
+        print("[foundry daemon] installed and started (systemd user)\n  log: journalctl --user -u foundry-daemon -f", file=sys.stderr)
 
     _warn_daemon_schedule_overlap()
 
@@ -196,7 +196,7 @@ def daemon_status() -> None:
         running = result.returncode == 0
         print(f"foundry daemon: {'running' if running else 'installed but not running'}")
         print(f"  plist: {_PLIST}")
-        print(f"  log:   /tmp/foundry-daemon.log")
+        print("  log:   /tmp/foundry-daemon.log")
     else:
         result = subprocess.run(
             ["systemctl", "--user", "is-active", "foundry-daemon"],
@@ -204,4 +204,4 @@ def daemon_status() -> None:
         )
         print(f"foundry daemon: {result.stdout.strip()}")
         print(f"  unit: {_SYSTEMD}")
-        print(f"  log:  journalctl --user -u foundry-daemon -f")
+        print("  log:  journalctl --user -u foundry-daemon -f")

@@ -9,7 +9,6 @@ from pathlib import Path
 from foundry.config import (
     RUN_TOOL_PREFIXES,
     DockerConfig,
-    FoundryConfig,
     GateConfig,
     ProfileConfig,
     classify_gate,

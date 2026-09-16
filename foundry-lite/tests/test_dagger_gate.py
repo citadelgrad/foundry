@@ -36,9 +36,9 @@ class TestDaggerRunnerModuleRemoved:
         assert not (Path(foundry.__file__).parent / "dagger_runner.py").exists()
 
     def test_nothing_imports_dagger_runner(self):
-        import foundry.runner
-        import foundry.cli
-        import foundry.watcher
+        import foundry.runner  # noqa: F401
+        import foundry.cli  # noqa: F401
+        import foundry.watcher  # noqa: F401
         # Import succeeding at all proves neither module references the
         # deleted dagger_runner module at import time.
         assert True
